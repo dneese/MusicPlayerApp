@@ -3,7 +3,9 @@ import 'package:just_audio/just_audio.dart';
 import 'package:on_audio_query/on_audio_query.dart';
 import 'package:permission_handler/permission_handler.dart';
 
-void main() async {
+// Тимчасово прибрали JustAudioBackground для діагностики чорного екрану
+
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   runApp(const MaterialApp(home: MusicPlayer()));
 }
@@ -19,61 +21,69 @@ class _MusicPlayerState extends State<MusicPlayer> {
   final AudioPlayer _audioPlayer = AudioPlayer();
   List<SongModel> _songs = [];
   bool _loading = true;
-  String _status = "Запуск...";
 
   @override
   void initState() {
     super.initState();
-    _initPlayer();
+    _checkPermission();
   }
 
-  Future<void> _initPlayer() async {
-    setState(() => _status = "Запит дозволів...");
-    if (await Permission.audio.request().isGranted || await Permission.storage.request().isGranted) {
+  Future<void> _checkPermission() async {
+    // Запитуємо дозволи для Android
+    Map<Permission, PermissionStatus> statuses = await [
+      Permission.audio,
+      Permission.storage,
+    ].request();
+
+    if (statuses[Permission.audio]!.isGranted || statuses[Permission.storage]!.isGranted) {
       _loadData();
     } else {
-      setState(() { _status = "Немає дозволу"; _loading = false; });
+      setState(() => _loading = false);
     }
   }
 
   Future<void> _loadData() async {
-    setState(() => _status = "Сканування...");
     try {
-      final songs = await _audioQuery.querySongs(
-        sortType: null,
-        orderType: OrderType.ASC_OR_SMALLER,
-        uriType: UriType.EXTERNAL,
-        ignoreCase: true,
-      );
+      final songs = await _audioQuery.querySongs();
       setState(() {
         _songs = songs;
         _loading = false;
       });
     } catch (e) {
-      setState(() { _status = "Помилка: $e"; _loading = false; });
+      setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _play(String path) async {
+    try {
+      await _audioPlayer.setFilePath(path);
+      _audioPlayer.play();
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Помилка: $e')));
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("Music Player (Stable)")),
+      appBar: AppBar(title: const Text("Music Player (Test)")),
       body: _loading 
-          ? Center(child: Text(_status))
+          ? const Center(child: CircularProgressIndicator())
           : ListView.builder(
               itemCount: _songs.length,
-              itemBuilder: (context, i) => ListTile(
-                title: Text(_songs[i].title),
-                onTap: () async {
-                  try {
-                    await _audioPlayer.setFilePath(_songs[i].data);
-                    _audioPlayer.play();
-                  } catch (e) {
-                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Помилка: $e')));
-                  }
-                },
-              ),
+              itemBuilder: (context, i) {
+                return ListTile(
+                  title: Text(_songs[i].title),
+                  onTap: () => _play(_songs[i].data),
+                );
+              },
             ),
     );
+  }
+
+  @override
+  void dispose() {
+    _audioPlayer.dispose();
+    super.dispose();
   }
 }

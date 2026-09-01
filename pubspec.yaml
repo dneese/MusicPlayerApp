@@ -1,7 +1,7 @@
 name: music_player_app
-description: A modern professional Flutter Music Player.
+description: A new Flutter project.
 publish_to: 'none'
-version: 1.1.0+1
+version: 1.0.0+1
 environment:
   sdk: '>=3.0.0 <4.0.0'
 
@@ -9,10 +9,9 @@ dependencies:
   flutter:
     sdk: flutter
   just_audio: ^0.9.40
-  audio_service: ^0.18.11
   on_audio_query: ^2.9.0
   permission_handler: ^11.3.1
-  rxdart: ^0.27.7
+
 
 dev_dependencies:
   flutter_test:
