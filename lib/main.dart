@@ -27,7 +27,6 @@ class _MusicPlayerState extends State<MusicPlayer> {
   List<SongModel> _songs = [];
   List<PlaylistModel> _playlists = [];
   bool _loading = true;
-  String? _error;
 
   @override
   void initState() {
@@ -39,7 +38,7 @@ class _MusicPlayerState extends State<MusicPlayer> {
     if (await Permission.audio.request().isGranted) {
       _loadData();
     } else {
-      setState(() { _error = "Немає доступу до файлів"; _loading = false; });
+      setState(() => _loading = false);
     }
   }
 
@@ -81,10 +80,15 @@ class _MusicPlayerState extends State<MusicPlayer> {
           children: [
             ListView.builder(
               itemCount: _songs.length,
-              itemBuilder: (context, i) => ListTile(
-                title: Text(_songs[i].title),
-                onTap: () => _play(_songs[i].data),
-              ),
+              itemBuilder: (context, i) {
+                final s = _songs[i];
+                return ListTile(
+                  leading: QueryArtworkWidget(id: s.id, type: ArtworkType.AUDIO, nullArtworkWidget: const Icon(Icons.music_note)),
+                  title: Text(s.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+                  subtitle: Text("${s.artist ?? 'Невідомий'} • ${s.album ?? 'Невідомий альбом'}"),
+                  onTap: () => _play(s.data),
+                );
+              },
             ),
             ListView.builder(
               itemCount: _playlists.length,
@@ -105,10 +109,14 @@ class _MusicPlayerState extends State<MusicPlayer> {
       appBar: AppBar(title: const Text("Плейлист")),
       body: ListView.builder(
         itemCount: songs.length,
-        itemBuilder: (context, i) => ListTile(
-          title: Text(songs[i].title),
-          onTap: () => _play(songs[i].data),
-        ),
+        itemBuilder: (context, i) {
+          final s = songs[i];
+          return ListTile(
+            leading: QueryArtworkWidget(id: s.id, type: ArtworkType.AUDIO, nullArtworkWidget: const Icon(Icons.music_note)),
+            title: Text(s.title),
+            onTap: () => _play(s.data),
+          );
+        },
       ),
     )));
   }
