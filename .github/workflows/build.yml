@@ -17,6 +17,17 @@ jobs:
         with:
           flutter-version: '3.19.0'
       - run: flutter create --project-name music_player_app --org com.example . || true
+      - name: Patch AndroidManifest for Android 13+
+        run: |
+          MANIFEST=android/app/src/main/AndroidManifest.xml
+          echo "--- BEFORE ---"
+          cat $MANIFEST
+          # Add permissions if missing
+          grep -q "READ_MEDIA_AUDIO" $MANIFEST || sed -i 's|</manifest>|    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />\n    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />\n    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />\n    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />\n</manifest>|' $MANIFEST
+          # Ensure AudioService
+          grep -q "AudioService" $MANIFEST || sed -i 's|</application>|        <service android:name="com.ryanheise.audioservice.AudioService" android:foregroundServiceType="mediaPlayback" android:exported="true"><intent-filter><action android:name="android.media.browse.MediaBrowserService" /></intent-filter></service>\n        <receiver android:name="com.ryanheise.audioservice.MediaButtonReceiver" android:exported="true"><intent-filter><action android:name="android.intent.action.MEDIA_BUTTON" /></intent-filter></receiver>\n    </application>|' $MANIFEST
+          echo "--- AFTER ---"
+          cat $MANIFEST
       - run: flutter pub get
       - run: flutter build apk --release
       - uses: softprops/action-gh-release@v2
