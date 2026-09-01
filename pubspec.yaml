@@ -1,0 +1,22 @@
+name: MusicPlayerApp
+description: A new Flutter project.
+publish_to: 'none'
+version: 1.0.0+1
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  just_audio: ^0.9.40
+  on_audio_query: ^2.9.0
+  permission_handler: ^11.3.1
+  just_audio_background: ^0.0.1+11
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true
