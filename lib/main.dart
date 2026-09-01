@@ -2,11 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:on_audio_query/on_audio_query.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'repository/library_repository.dart';
+import 'repository/playlist_repository.dart';
 
-// Тимчасово прибрали JustAudioBackground для діагностики чорного екрану
-
-Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
+void main() {
   runApp(const MaterialApp(home: MusicPlayer()));
 }
 
@@ -17,7 +16,8 @@ class MusicPlayer extends StatefulWidget {
 }
 
 class _MusicPlayerState extends State<MusicPlayer> {
-  final OnAudioQuery _audioQuery = OnAudioQuery();
+  final LibraryRepository _libraryRepository = LibraryRepository();
+  final PlaylistRepository _playlistRepository = PlaylistRepository();
   final AudioPlayer _audioPlayer = AudioPlayer();
   List<SongModel> _songs = [];
   bool _loading = true;
@@ -29,7 +29,6 @@ class _MusicPlayerState extends State<MusicPlayer> {
   }
 
   Future<void> _checkPermission() async {
-    // Запитуємо дозволи для Android
     Map<Permission, PermissionStatus> statuses = await [
       Permission.audio,
       Permission.storage,
@@ -44,7 +43,7 @@ class _MusicPlayerState extends State<MusicPlayer> {
 
   Future<void> _loadData() async {
     try {
-      final songs = await _audioQuery.querySongs();
+      final songs = await _libraryRepository.getSongs();
       setState(() {
         _songs = songs;
         _loading = false;
@@ -54,19 +53,10 @@ class _MusicPlayerState extends State<MusicPlayer> {
     }
   }
 
-  Future<void> _play(String path) async {
-    try {
-      await _audioPlayer.setFilePath(path);
-      _audioPlayer.play();
-    } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Помилка: $e')));
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("Music Player (Test)")),
+      appBar: AppBar(title: const Text("Modern Music Player")),
       body: _loading 
           ? const Center(child: CircularProgressIndicator())
           : ListView.builder(
@@ -74,7 +64,11 @@ class _MusicPlayerState extends State<MusicPlayer> {
               itemBuilder: (context, i) {
                 return ListTile(
                   title: Text(_songs[i].title),
-                  onTap: () => _play(_songs[i].data),
+                  subtitle: Text(_songs[i].artist ?? "Unknown"),
+                  onTap: () async {
+                    await _audioPlayer.setFilePath(_songs[i].data);
+                    _audioPlayer.play();
+                  },
                 );
               },
             ),
