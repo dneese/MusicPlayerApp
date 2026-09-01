@@ -18,7 +18,6 @@ jobs:
           flutter-version: '3.19.0'
       - run: flutter pub get
       - run: flutter build apk --release
-      - run: flutter build apk --release
       - uses: softprops/action-gh-release@v2
         with:
           files: build/app/outputs/flutter-apk/app-release.apk
