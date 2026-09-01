@@ -7,7 +7,7 @@
     <application
         android:label="Music Player"
         android:icon="@mipmap/ic_launcher"
-        android:name="io.flutter.app.FlutterApplication">
+        android:name="${applicationName}">
         <activity
             android:name=".MainActivity"
             android:exported="true"
