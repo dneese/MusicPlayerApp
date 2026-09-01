@@ -16,8 +16,9 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.19.0'
-      - name: Recreate Android structure
-        run: flutter create .
+      - name: Fix pubspec
+        run: |
+          sed -i 's/^name: .*/name: musicplayerapp/' pubspec.yaml
       - run: flutter pub get
       - name: Run tests
         run: flutter test || true
