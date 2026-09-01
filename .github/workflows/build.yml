@@ -14,6 +14,7 @@ jobs:
         with:
           flutter-version: '3.19.0'
       - run: flutter pub get
+      - run: flutter create .
       - run: flutter build apk --release
       - uses: softprops/action-gh-release@v2
         with:
