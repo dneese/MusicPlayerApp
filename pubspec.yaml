@@ -1,5 +1,5 @@
 name: music_player_app
-description: Music Player
+description: Современный музыкальный плеер
 publish_to: 'none'
 version: 1.0.0+1
 
@@ -9,13 +9,32 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  
+  # Основные зависимости
   just_audio: ^0.9.36
   just_audio_background: any
   audio_service: any
   rxdart: ^0.27.7
+  
+  # Работа с медиа
   on_audio_query: ^2.9.0
+  
+  # Разрешения
   permission_handler: ^11.0.1
+  
+  # UI эффекты
+  flutter_animate: ^4.5.0
+  google_fonts: ^6.1.0
+  shimmer: ^3.0.0
+  
+  # Для динамических цветов
+  palette_generator: ^0.3.3+3
+  
+  # Хранение
   shared_preferences: ^2.2.2
+  
+  # Утилиты
+  device_info_plus: ^9.1.1
 
 dev_dependencies:
   flutter_test:
@@ -24,3 +43,5 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/images/
