@@ -12,7 +12,7 @@ dependencies:
   
   # Core
   just_audio: ^0.9.36
-  just_audio_background: ^0.0.1-beta.15
+  just_audio_background: ^0.0.1-beta.13
   audio_service: ^0.18.13
   rxdart: ^0.27.7
   
