@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -6,9 +7,12 @@ import 'package:flutter/material.dart';
 import 'package:on_audio_query/on_audio_query.dart';
 import 'package:palette_generator/palette_generator.dart';
 import 'package:audio_service/audio_service.dart';
+import 'package:share_plus/share_plus.dart';
 import '../models/playlist.dart';
 import '../repository/playlist_repository.dart';
+import '../repository/favorites_repository.dart';
 import '../services/audio_handler.dart';
+import '../utils/theme_manager.dart';
 
 enum SortBy { title, artist, album, genre, duration, dateAdded }
 
@@ -22,10 +26,14 @@ class PlayerScreen extends StatefulWidget {
 class _PlayerScreenState extends State<PlayerScreen> {
   final OnAudioQuery _audioQuery = OnAudioQuery();
   final PlaylistRepository _playlistRepo = PlaylistRepository();
+  final FavoritesRepository _favoritesRepo = FavoritesRepository();
 
   List<SongModel> _allSongs = [];
   List<SongModel> _songs = [];
+  List<SongModel> _albumSongs = [];
+  String? _albumTitle = 'Альбом';
   List<Playlist> _playlists = [];
+  Set<String> _favorites = {};
   bool _isLoading = true;
   bool _permissionDenied = false;
   String? _loadError;
@@ -45,6 +53,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     super.initState();
     _loadLibrary();
     _loadPlaylists();
+    _loadFavorites();
     _handler = handlerNotifier.value;
     _handlerSub = () {
       final h = handlerNotifier.value;
@@ -129,6 +138,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
     if (mounted) setState(() => _playlists = playlists);
   }
 
+  Future<void> _loadFavorites() async {
+    final favs = await _favoritesRepo.load();
+    if (mounted) setState(() => _favorites = favs);
+  }
+
   // ---------- Playback via handler ----------
 
   Future<void> _play(SongModel song) async {
@@ -192,6 +206,193 @@ class _PlayerScreenState extends State<PlayerScreen> {
     setState(() => p.songPaths.add(song.data));
     await _playlistRepo.save(_playlists);
     _showSnackBase('Добавлено в «${p.name}»');
+  }
+
+  // ---------- Track context menu (Spotify-style) ----------
+
+  void _showTrackMenu(SongModel song) {
+    final isFav = _favorites.contains(song.id.toString());
+    showModalBottomSheet(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: _artwork(song.id),
+              title: Text(song.title,
+                  maxLines: 1, overflow: TextOverflow.ellipsis),
+              subtitle: Text(song.artist ?? '',
+                  maxLines: 1, overflow: TextOverflow.ellipsis),
+            ),
+            const Divider(height: 1),
+            ListTile(
+              leading: const Icon(Icons.play_arrow_rounded),
+              title: const Text('Воспроизвести'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _play(song);
+              },
+            ),
+            if (song.album != null && song.album!.isNotEmpty)
+              ListTile(
+                leading: const Icon(Icons.album),
+                title: const Text('Перейти к альбому'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _openAlbum(song);
+                },
+              ),
+            ListTile(
+              leading: const Icon(Icons.queue_music),
+              title: const Text('Добавить в плейлист'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _addToPlaylist(song);
+              },
+            ),
+            ListTile(
+              leading: Icon(isFav ? Icons.favorite : Icons.favorite_border,
+                  color: isFav ? Colors.redAccent : null),
+              title: Text(isFav ? 'Убрать из избранного' : 'Добавить в избранное'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _toggleFavorite(song);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.share),
+              title: const Text('Поделиться'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _shareSong(song);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.info_outline),
+              title: const Text('Информация о файле'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _showFileInfo(song);
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _toggleFavorite(SongModel song) async {
+    final id = song.id.toString();
+    final isFav = _favorites.contains(id);
+    setState(() {
+      isFav ? _favorites.remove(id) : _favorites.add(id);
+    });
+    await _favoritesRepo.save(_favorites);
+    _showSnackBase(isFav ? 'Убрано из избранного' : 'Добавлено в избранное');
+  }
+
+  void _shareSong(SongModel song) async {
+    try {
+      await SharePlus.instance.share(
+        ShareParams(
+          text: '${song.title} — ${song.artist ?? ''}',
+          subject: 'Поделиться треком',
+        ),
+      );
+    } catch (_) {}
+  }
+
+  void _openAlbum(SongModel song) {
+    final album = song.album?.trim() ?? '';
+    final songs = album.isEmpty
+        ? <SongModel>[]
+        : _allSongs.where((s) => (s.album ?? '').trim() == album).toList();
+    if (songs.isEmpty) {
+      _showSnackBase('Альбом не найден');
+      return;
+    }
+    setState(() {
+      _albumSongs = songs;
+      _albumTitle = album.isEmpty ? 'Неизвестный альбом' : album;
+      _navIndex = 3;
+    });
+  }
+
+  Future<void> _showFileInfo(SongModel song) async {
+    final bytes = await _fileSize(song.data);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Информация о файле'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _infoRow('Название', song.title),
+            _infoRow('Исполнитель', song.artist ?? '—'),
+            _infoRow('Альбом', song.album ?? '—'),
+            _infoRow('Жанр', song.genre ?? '—'),
+            if (song.duration != null && song.duration! > 0)
+              _infoRow('Длительность', _fmtDuration(song.duration!)),
+            _infoRow('Размер', _fmtBytes(bytes)),
+            _infoRow('Время в избранном', _isFav(song) ? 'Да' : 'Нет'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Закрыть'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _infoRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 120,
+            child: Text(label,
+                style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant)),
+          ),
+          Expanded(child: Text(value)),
+        ],
+      ),
+    );
+  }
+
+  bool _isFav(SongModel s) => _favorites.contains(s.id.toString());
+
+  Future<int> _fileSize(String path) async {
+    try {
+      return await File(path).length();
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  String _fmtDuration(int ms) {
+    final d = Duration(milliseconds: ms);
+    final m = d.inMinutes.toString().padLeft(1, '0');
+    final s = (d.inSeconds % 60).toString().padLeft(2, '0');
+    return '$m:$s';
+  }
+
+  String _fmtBytes(int bytes) {
+    if (bytes <= 0) return '—';
+    final kb = bytes / 1024;
+    if (kb < 1024) return '${kb.toStringAsFixed(1)} КБ';
+    final mb = kb / 1024;
+    if (mb < 1024) return '${mb.toStringAsFixed(1)} МБ';
+    return '${(mb / 1024).toStringAsFixed(2)} ГБ';
   }
 
   Future<String?> _promptText(String title, String label, {String? initial}) async {
@@ -272,24 +473,109 @@ class _PlayerScreenState extends State<PlayerScreen> {
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
       child: Row(
         children: [
-          _navChip(0, Icons.library_music, 'Песни'),
-          const SizedBox(width: 8),
-          _navChip(1, Icons.queue_music, 'Плейлисты'),
+          if (_navIndex == 3)
+            IconButton(
+              icon: const Icon(Icons.arrow_back),
+              tooltip: 'Назад',
+              onPressed: () => setState(() => _navIndex = 0),
+            )
+          else ...[
+            _navChip(0, Icons.library_music, 'Песни'),
+            const SizedBox(width: 8),
+            _navChip(1, Icons.queue_music, 'Плейлисты'),
+            if (_navIndex == 0 || _navIndex == 2) ...[
+              const SizedBox(width: 8),
+              _navChip(2, Icons.favorite, 'Избранное'),
+            ],
+          ],
           const Spacer(),
+          if (_navIndex != 3) ...[
+            IconButton(
+              tooltip: 'Сортировка',
+              icon: const Icon(Icons.sort_by_alpha),
+              onPressed: _showSortDialog,
+            ),
+            IconButton(
+              tooltip: 'Обновить',
+              icon: const Icon(Icons.refresh),
+              onPressed: _loadLibrary,
+            ),
+          ],
           IconButton(
-            tooltip: 'Сортировка',
-            icon: const Icon(Icons.sort_by_alpha),
-            onPressed: _showSortDialog,
-          ),
-          IconButton(
-            tooltip: 'Обновить',
-            icon: const Icon(Icons.refresh),
-            onPressed: _loadLibrary,
+            tooltip: 'Настройки',
+            icon: const Icon(Icons.settings),
+            onPressed: _openSettings,
           ),
         ],
       ),
     );
   }
+
+  void _openSettings() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 16, 20, 8),
+              child: Text('Настройки',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
+            ),
+            ListTile(
+              leading: const Icon(Icons.brightness_6),
+              title: const Text('Тема оформления'),
+              trailing: PopupMenuButton<ThemeMode>(
+                initialValue: ThemeManager.themeNotifier.value,
+                onSelected: (m) => ThemeManager.setTheme(m),
+                itemBuilder: (_) => const [
+                  PopupMenuItem(
+                      value: ThemeMode.system, child: Text('Как в системе')),
+                  PopupMenuItem(value: ThemeMode.light, child: Text('Светлая')),
+                  PopupMenuItem(value: ThemeMode.dark, child: Text('Тёмная')),
+                ],
+                child: Text(_themeLabel(ThemeManager.themeNotifier.value)),
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.sort),
+              title: const Text('Сортировка по умолчанию'),
+              subtitle: const Text('Применяется к списку песен'),
+              trailing: PopupMenuButton<int>(
+                initialValue: _sortIndex,
+                onSelected: (i) {
+                  setState(() => _sortIndex = i);
+                  _applySort();
+                },
+                itemBuilder: (_) => List.generate(_sortOptions.length, (i) {
+                  return PopupMenuItem(
+                      value: i, child: Text(_sortLabel(_sortOptions[i])));
+                }),
+                child: Text(_sortLabel(_sortOptions[_sortIndex])),
+              ),
+            ),
+            const Divider(height: 1),
+            ListTile(
+              leading: const Icon(Icons.info_outline),
+              title: const Text('О приложении'),
+              subtitle: const Text('Music Player Pro · v6.3.0'),
+              onTap: () => Navigator.pop(ctx),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _themeLabel(ThemeMode m) => switch (m) {
+        ThemeMode.system => 'Как в системе',
+        ThemeMode.light => 'Светлая',
+        ThemeMode.dark => 'Тёмная',
+      };
 
   void _showSortDialog() {
     showModalBottomSheet(
@@ -353,24 +639,77 @@ class _PlayerScreenState extends State<PlayerScreen> {
         onTap: () => _loadLibrary(retry: true),
       );
     }
-    return _navIndex == 0 ? _buildSongsView() : _buildPlaylistsView();
+    return switch (_navIndex) {
+      0 => _buildSongsView(),
+      1 => _buildPlaylistsView(),
+      2 => _buildFavoritesView(),
+      3 => _buildAlbumView(),
+      _ => _buildSongsView(),
+    };
   }
 
   Widget _buildSongsView() {
     if (_songs.isEmpty) {
       return const Center(child: Text('Нет песен на устройстве'));
     }
+    return _buildSongList(_songs);
+  }
+
+  Widget _buildFavoritesView() {
+    final favs = _allSongs
+        .where((s) => _favorites.contains(s.id.toString()))
+        .toList();
+    if (favs.isEmpty) {
+      return _CenterAction(
+        icon: Icons.favorite_outline,
+        text: 'Нет избранных треков',
+        button: 'Перейти к песням',
+        onTap: () => setState(() => _navIndex = 0),
+      );
+    }
+    return _buildSongList(favs);
+  }
+
+  Widget _buildAlbumView() {
+    final title = _albumTitle ?? 'Альбом';
+    final songs = _albumSongs;
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text('Альбом: $title',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        fontSize: 20, fontWeight: FontWeight.w700)),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: songs.isEmpty
+              ? const Center(child: Text('Треки не найдены'))
+              : _buildSongList(songs),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSongList(List<SongModel> songs) {
     return ListView.separated(
       padding: const EdgeInsets.fromLTRB(8, 8, 8, 96),
-      itemCount: _songs.length,
+      itemCount: songs.length,
       separatorBuilder: (_, __) => const SizedBox(height: 4),
       itemBuilder: (context, index) {
-        final song = _songs[index];
+        final song = songs[index];
         return _SongTile(
           song: song,
           artwork: _artwork(song.id),
           onTap: () => _play(song),
-          onAdd: () => _addToPlaylist(song),
+          onMenu: () => _showTrackMenu(song),
         );
       },
     );
@@ -605,44 +944,45 @@ class _SongTile extends StatelessWidget {
   final SongModel song;
   final Widget artwork;
   final VoidCallback onTap;
-  final VoidCallback onAdd;
+  final VoidCallback onMenu;
 
   const _SongTile({
     required this.song,
     required this.artwork,
     required this.onTap,
-    required this.onAdd,
+    required this.onMenu,
   });
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return ListTile(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      leading: Stack(
-        alignment: Alignment.center,
-        children: [artwork],
-      ),
-      title: Text(
-        song.title,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(color: scheme.onSurface, fontWeight: FontWeight.w600),
-      ),
-      subtitle: Text(
-        [song.artist, song.album].where((s) => s != null && s.isNotEmpty).join(' · '),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
-      trailing: PopupMenuButton<String>(
-        onSelected: (v) {
-          if (v == 'add') onAdd();
-        },
-        itemBuilder: (_) => const [
-          PopupMenuItem(value: 'add', child: Text('Добавить в плейлист')),
-        ],
-      ),
+    return InkWell(
       onTap: onTap,
+      onLongPress: onMenu,
+      borderRadius: BorderRadius.circular(14),
+      child: ListTile(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        leading: Stack(
+          alignment: Alignment.center,
+          children: [artwork],
+        ),
+        title: Text(
+          song.title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(color: scheme.onSurface, fontWeight: FontWeight.w600),
+        ),
+        subtitle: Text(
+          [song.artist, song.album].where((s) => s != null && s.isNotEmpty).join(' · '),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        trailing: IconButton(
+          icon: const Icon(Icons.more_vert),
+          tooltip: 'Дополнительно',
+          onPressed: onMenu,
+        ),
+      ),
     );
   }
 }

@@ -17,6 +17,12 @@ class ThemeManager {
     await prefs.setInt(_themeKey, newIndex);
   }
 
+  static Future<void> setTheme(ThemeMode mode) async {
+    final prefs = await SharedPreferences.getInstance();
+    themeNotifier.value = mode;
+    await prefs.setInt(_themeKey, mode.index);
+  }
+
   static ThemeData get lightTheme => ThemeData(useMaterial3: true, brightness: Brightness.light, colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple));
   static ThemeData get darkTheme => ThemeData(useMaterial3: true, brightness: Brightness.dark, colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple, brightness: Brightness.dark));
 }

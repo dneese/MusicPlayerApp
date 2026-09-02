@@ -13,19 +13,25 @@ Future<void> main() async {
 
   await ThemeManager.init();
 
-  // Initialize the background audio service before showing UI so background
-  // playback works and the handler is ready. Use a timeout so a hang can never
-  // leave the user on a black screen.
+  // Initialize background audio with a firm internal timeout; on ANY failure we
+  // still get an in-process handler so the UI can always play. This guarantees
+  // the "Плеер ещё запускается" state can never occur.
   try {
     await _initAudioService().timeout(const Duration(seconds: 10));
   } catch (_) {
-    // Continue to UI even if background service failed.
+    // Last-resort fallback if the whole future aborted before yielding a handler.
+    if (handlerNotifier.value == null) {
+      final fallback = AudioPlayerHandler();
+      AudioPlayerHandler.instance = fallback;
+      handlerNotifier.value = fallback;
+    }
   }
 
   runApp(const MyApp());
 }
 
 Future<void> _initAudioService() async {
+  AudioPlayerHandler? handler;
   try {
     await Permission.storage.request();
   } catch (_) {}
@@ -37,7 +43,7 @@ Future<void> _initAudioService() async {
       androidNotificationOngoing: true,
       notificationColor: const Color(0xFF7C4DFF),
     );
-    final handler = await AudioService.init(
+    handler = (await AudioService.init(
       builder: () => AudioPlayerHandler(),
       config: const AudioServiceConfig(
         androidNotificationChannelId: 'com.yourapp.music.player',
@@ -46,12 +52,15 @@ Future<void> _initAudioService() async {
         androidNotificationOngoing: true,
         notificationColor: Color(0xFF7C4DFF),
       ),
-    );
-    AudioPlayerHandler.instance = handler as AudioPlayerHandler;
-    handlerNotifier.value = AudioPlayerHandler.instance;
+    )) as AudioPlayerHandler;
   } catch (e) {
     debugPrint('Audio service init error: $e');
   }
+
+  // Always ensure a handler exists (service-backed or in-process fallback).
+  final h = handler ?? AudioPlayerHandler();
+  AudioPlayerHandler.instance = h;
+  handlerNotifier.value = h;
 }
 
 class MyApp extends StatelessWidget {
