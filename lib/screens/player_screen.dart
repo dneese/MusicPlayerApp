@@ -125,7 +125,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
       final bytes = await _audioQuery.queryArtwork(id, ArtworkType.AUDIO,
           format: ArtworkFormat.JPEG, size: 200);
       if (bytes == null || bytes.isEmpty) return;
-      final palette = await PaletteGenerator.fromBytes(bytes, maximumColorCount: 6);
+      final decoded = await decodeImageFromList(bytes);
+      final palette = await PaletteGenerator.fromImage(decoded, maximumColorCount: 6);
+      decoded.dispose();
       final color = palette.dominantColor?.color;
       if (color != null && mounted) {
         setState(() => _accent = color);
