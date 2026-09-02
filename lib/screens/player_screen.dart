@@ -24,33 +24,46 @@ class _PlayerScreenState extends State<PlayerScreen> {
   @override
   void initState() {
     super.initState();
-    _initAudioService();
+    handlerNotifier.addListener(_onHandlerChanged);
+    _onHandlerChanged();
   }
 
-  Future<void> _initAudioService() async {
-    _handler = AudioPlayerHandler.instance;
+  @override
+  void dispose() {
+    handlerNotifier.removeListener(_onHandlerChanged);
+    super.dispose();
+  }
 
-    if (_handler != null) {
-      await _handler!.customAction('loadSongs');
-      
-      _handler!.songsStream.listen((songs) {
-        if(mounted) setState(() {
-          _songs = songs;
-          _isLoading = false;
-        });
-      });
+  void _onHandlerChanged() {
+    final handler = handlerNotifier.value;
+    if (_handler == handler) return;
+    _handler = handler;
+    _connectHandler(handler);
+  }
 
-      _handler!.currentIndexStream.listen((index) {
-        if(mounted) setState(() {
-          _currentIndex = index;
-          if (index >= 0 && index < _songs.length) {
-            _extractAlbumColor(_songs[index]);
-          }
-        });
-      });
-    } else {
-      setState(() => _isLoading = false);
+  Future<void> _connectHandler(AudioPlayerHandler? handler) async {
+    if (handler == null) {
+      if (mounted) setState(() => _isLoading = false);
+      return;
     }
+
+    await handler.customAction('loadSongs');
+
+    handler.songsStream.listen((songs) {
+      if (mounted) setState(() {
+        _songs = songs;
+        _isLoading = false;
+      });
+    });
+
+    handler.currentIndexStream.listen((index) {
+      if (mounted) setState(() {
+        _currentIndex = index;
+        if (index >= 0 && index < _songs.length) {
+          _extractAlbumColor(_songs[index]);
+        }
+      });
+    });
   }
 
   Future<void> _extractAlbumColor(SongModel song) async {

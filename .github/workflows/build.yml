@@ -1,4 +1,4 @@
-name: Build and Release
+name: Build, Test and Release
 
 on:
   push:
@@ -10,7 +10,62 @@ permissions:
   contents: write
 
 jobs:
+  widget-test:
+    name: Widget tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.19.0'
+          cache: true
+
+      - name: 📦 Install dependencies
+        run: flutter pub get
+
+      - name: 🧪 Run widget tests
+        run: flutter test test/widget_test.dart
+
+  integration-test:
+    name: Integration tests (Android emulator)
+    runs-on: macos-latest
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.19.0'
+          cache: true
+
+      - name: Generate Android structure (clean)
+        run: |
+          rm -rf android
+          flutter create --platforms=android . --project-name music_player_app
+
+      - name: 📦 Install dependencies
+        run: flutter pub get
+
+      - name: 🚀 Boot emulator and run integration tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 32
+          arch: x86_64
+          disable-animations: true
+          script: flutter test integration_test/app_test.dart
+
   build:
+    name: Build & Release
     runs-on: ubuntu-latest
 
     steps:
@@ -43,8 +98,6 @@ jobs:
           \    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />\
           \    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />\
           \    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />' "$MANIFEST"
-          echo "--- Manifest after edit ---"
-          cat "$MANIFEST"
 
       - name: 📦 Install dependencies
         run: |
