@@ -30,6 +30,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     super.initState();
     handlerNotifier.addListener(_onHandlerChanged);
     _onHandlerChanged();
+    _loadLibrary();
   }
 
   @override
@@ -44,9 +45,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
     _handler = handler;
     if (handler != null) {
       _listenToHandler(handler);
-      _loadLibrary();
-    } else if (mounted) {
-      setState(() => _isLoading = false);
+      if (_songs.isNotEmpty) {
+        handler.setSongs(_songs);
+      }
     }
   }
 
