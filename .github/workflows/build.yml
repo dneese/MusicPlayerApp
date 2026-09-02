@@ -1,9 +1,10 @@
-name: Build and Test
+name: Build and Release
 
 on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -11,17 +12,54 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    
     steps:
-      - uses: actions/checkout@v4
-      - uses: subosito/flutter-action@v2
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
         with:
-          flutter-version: '3.19.0'
-      - run: flutter pub get
-      - name: Run smoke tests
-        run: flutter test || true
-      - run: flutter build apk --release
-      - uses: softprops/action-gh-release@v2
+          distribution: 'temurin'
+          java-version: '17'
+      
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
         with:
-          files: build/app/outputs/flutter-apk/app-release.apk
+          flutter-version: '3.22.4'
+          channel: 'stable'
+          cache: true
+      
+      - name: Install dependencies
+        run: |
+          flutter pub get
+          flutter doctor -v
+      
+      - name: Build APK
+        run: |
+          chmod +x android/gradlew
+          flutter build apk --release --split-per-abi --verbose
+      
+      - name: Build App Bundle
+        run: flutter build appbundle --release
+      
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: apk-files
+          path: |
+            build/app/outputs/flutter-apk/*.apk
+            build/app/outputs/bundle/*.aab
+      
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            build/app/outputs/flutter-apk/*.apk
+            build/app/outputs/bundle/*.aab
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+          name: Release ${{ github.ref_name }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,17 +1,17 @@
 include ':app'
 
-def localProperties = new Properties()
-def localPropertiesFile = rootProject.file('local.properties')
-if (localPropertiesFile.exists()) {
-    localPropertiesFile.withReader('UTF-8') { reader ->
-        localProperties.load(reader)
+def flutterRoot = System.getenv('FLUTTER_ROOT')
+if (flutterRoot == null) {
+    def localProperties = new Properties()
+    def localPropertiesFile = file('local.properties')
+    if (localPropertiesFile.exists()) {
+        localPropertiesFile.withReader('UTF-8') { reader ->
+            localProperties.load(reader)
+        }
+        flutterRoot = localProperties.getProperty('flutter.sdk')
     }
 }
 
-def flutterRoot = localProperties.getProperty('flutter.sdk')
-if (flutterRoot == null) {
-    flutterRoot = System.getenv('FLUTTER_ROOT')
-}
 if (flutterRoot != null) {
     apply from: "$flutterRoot/packages/flutter_tools/gradle/app_plugin_loader.gradle"
 }
