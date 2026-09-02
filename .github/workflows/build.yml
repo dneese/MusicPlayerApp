@@ -56,6 +56,11 @@ jobs:
           \    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />\
           \    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />' "$MANIFEST"
 
+          # Reconcile a single Kotlin stdlib version to avoid duplicate-class
+          # failures when share_plus pulls in a newer kotlin-stdlib.
+          ROOT_GRADLE="android/build.gradle"
+          printf '\nsubprojects {\n    configurations.all {\n        resolutionStrategy.eachDependency { details ->\n            if (details.requested.group == "org.jetbrains.kotlin" && details.requested.name.startsWith("kotlin-stdlib")) {\n                details.useVersion "1.8.10"\n            }\n        }\n    }\n}\n' >> "$ROOT_GRADLE"
+
       - name: 📦 Install dependencies
         run: |
           flutter pub get
