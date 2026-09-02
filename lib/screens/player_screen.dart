@@ -6,7 +6,6 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:on_audio_query/on_audio_query.dart';
 import 'package:palette_generator/palette_generator.dart';
-import 'package:audio_service/audio_service.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/playlist.dart';
@@ -26,6 +25,7 @@ class PlayerScreen extends StatefulWidget {
 }
 
 class _PlayerScreenState extends State<PlayerScreen> {
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   final OnAudioQuery _audioQuery = OnAudioQuery();
   final PlaylistRepository _playlistRepo = PlaylistRepository();
   final FavoritesRepository _favoritesRepo = FavoritesRepository();
@@ -186,8 +186,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       _showSnackBase('Плеер ещё запускается, попробуйте через секунду');
       return;
     }
-    final index = _songs.indexOf(song);
-    await h.playSong(index);
+    await h.playBySong(song);
     if (_navIndex != 0) setState(() => _navIndex = 0);
     final err = h.errorNotifier.value;
     if (err != null) {
@@ -550,6 +549,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       );
     }
     return Scaffold(
+      key: _scaffoldKey,
       drawer: _buildDrawer(),
       body: Stack(
         children: [
@@ -660,7 +660,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
           IconButton(
             icon: const Icon(Icons.menu),
             tooltip: 'Меню',
-            onPressed: () => Scaffold.of(context).openDrawer(),
+            onPressed: () => _scaffoldKey.currentState?.openDrawer(),
           ),
           const SizedBox(width: 4),
           Expanded(
@@ -758,7 +758,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
             ListTile(
               leading: const Icon(Icons.info_outline),
               title: const Text('О приложении'),
-              subtitle: const Text('Music Player Pro · v6.4.0'),
+subtitle: const Text('Music Player Pro · v6.5.0'),
               onTap: () => Navigator.pop(ctx),
             ),
             const Divider(height: 1),
@@ -1023,23 +1023,18 @@ class _PlayerScreenState extends State<PlayerScreen> {
   Widget _buildMiniBar() {
     final h = handlerNotifier.value;
     if (h == null) return const SizedBox.shrink();
-    return StreamBuilder<MediaItem?>(
-      stream: h.mediaItem,
-      builder: (context, mediaSnap) {
-        final media = mediaSnap.data;
-        final song = media != null
-            ? _allSongs.where((s) => s.title == media.title).firstOrNull
-            : null;
+    return StreamBuilder<SongModel?>(
+      stream: h.currentSongStream,
+      builder: (context, songSnap) {
+        final song = songSnap.data;
         final id = song?.id ?? -1;
         return StreamBuilder<bool>(
           stream: h.playingStream,
           builder: (context, playSnap) {
             final playing = playSnap.data ?? false;
-            final title = media?.title;
-            final artist = media?.artist;
             return _MiniBar(
-              title: song?.title ?? title ?? 'Выберите трек',
-              artist: song?.artist ?? artist ?? '',
+              title: song != null ? _displayTitle(song) : 'Выберите трек',
+              artist: song != null ? _displayArtist(song) : '',
               playing: playing,
               artwork: id >= 0 ? _artwork(id) : null,
               onPlayPause: () => playing ? h.pause() : h.play(),
@@ -1445,7 +1440,7 @@ class _NowPlayingPageState extends State<_NowPlayingPage> {
                                     color: Theme.of(context).colorScheme.primary)
                                 : const Icon(Icons.play_arrow),
                             onTap: () {
-                              widget.handler.playSong(i);
+                              widget.handler.playBySong(widget.songs[i]);
                               Navigator.of(ctx).pop();
                             },
                           );
@@ -1464,10 +1459,12 @@ class _NowPlayingPageState extends State<_NowPlayingPage> {
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<MediaItem?>(
-      stream: widget.handler.mediaItem,
-      builder: (context, mediaSnap) {
-        final media = mediaSnap.data;
+    return StreamBuilder<SongModel?>(
+      stream: widget.handler.currentSongStream,
+      builder: (context, songSnap) {
+        final song = songSnap.data;
+        final title = song?.title ?? 'Нет трека';
+        final artist = song?.artist ?? '';
         return Scaffold(
           backgroundColor: Colors.transparent,
           body: Stack(
@@ -1498,11 +1495,11 @@ class _NowPlayingPageState extends State<_NowPlayingPage> {
                       const SizedBox(height: 12),
                       widget.artwork(_bg),
                       const SizedBox(height: 28),
-                      Text(media?.title ?? 'Нет трека',
+                      Text(title,
                           textAlign: TextAlign.center,
                           style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w700)),
                       const SizedBox(height: 6),
-                      Text(media?.artist ?? '',
+                      Text(artist,
                           textAlign: TextAlign.center,
                           style: TextStyle(fontSize: 16, color: Colors.white.withOpacity(0.75))),
                       const SizedBox(height: 24),

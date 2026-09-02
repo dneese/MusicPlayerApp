@@ -1,4 +1,3 @@
-import 'package:audio_service/audio_service.dart';
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:on_audio_query/on_audio_query.dart';
@@ -6,7 +5,14 @@ import 'package:rxdart/rxdart.dart';
 
 enum RepeatMode { off, all, one }
 
-class AudioPlayerHandler extends BaseAudioHandler {
+/// A self-contained playback controller built directly on just_audio.
+///
+/// Deliberately does NOT extend audio_service's BaseAudioHandler: that class
+/// requires AudioService.init() to have completed, and if the background
+/// service fails to start it throws LateInitializationError on every control
+/// call. A plain just_audio player always works in-process, which is what
+/// actually gets music to play.
+class AudioPlayerHandler {
   static AudioPlayerHandler? instance;
   final AudioPlayer _player = AudioPlayer();
 
@@ -21,6 +27,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
   final BehaviorSubject<bool> _shuffleController = BehaviorSubject.seeded(false);
   final BehaviorSubject<List<SongModel>> _songsController = BehaviorSubject.seeded(const <SongModel>[]);
   final BehaviorSubject<int> _currentIndexController = BehaviorSubject.seeded(-1);
+  final BehaviorSubject<SongModel?> _currentSongController = BehaviorSubject.seeded(null);
 
   /// Surfaces playback errors to the UI for a helpful message instead of a
   /// silent dead tap.
@@ -30,19 +37,20 @@ class AudioPlayerHandler extends BaseAudioHandler {
   Stream<bool> get shuffleStream => _shuffleController.stream;
   Stream<List<SongModel>> get songsStream => _songsController.stream;
   Stream<int> get currentIndexStream => _currentIndexController.stream;
+  Stream<SongModel?> get currentSongStream => _currentSongController.stream;
 
-  AudioPlayerHandler({List<SongModel>? songs}) {
+  Stream<Duration> get positionStream => _player.positionStream;
+  Stream<Duration?> get durationStream => _player.durationStream;
+  Stream<bool> get playingStream => _player.playingStream;
+  bool get isPlaying => _player.playing;
+
+  AudioPlayerHandler() {
     instance = this;
     handlerNotifier.value = this;
-    if (songs != null) {
-      _songs = songs;
-      _songsController.add(_songs);
-    }
     _listen();
   }
 
   void _listen() {
-    _player.playbackEventStream.listen(_broadcastState);
     _player.playerStateStream.listen((state) {
       if (state.processingState == ProcessingState.completed) {
         _onTrackComplete();
@@ -63,14 +71,6 @@ class AudioPlayerHandler extends BaseAudioHandler {
 
   // -------- Queue logic --------
 
-  int _resolveOrderIndex() {
-    if (_shuffle) {
-      if (_shuffleCursor >= 0) return _shuffleOrder[_shuffleCursor];
-      return _songs.isEmpty ? -1 : _shuffleOrder.firstWhere((_) => true, orElse: () => -1);
-    }
-    return _currentIndex;
-  }
-
   Future<void> _playAt(int index) async {
     if (_songs.isEmpty) {
       errorNotifier.value = 'Библиотека ещё не загружена';
@@ -88,24 +88,13 @@ class AudioPlayerHandler extends BaseAudioHandler {
     final song = _songs[index];
     try {
       await _player.setFilePath(song.data);
-      await _setCurrentMediaItem(song);
+      _currentSongController.add(song);
       _player.play();
       errorNotifier.value = null;
     } catch (e) {
       _currentIndex = prevIndex;
       errorNotifier.value = 'Не удалось воспроизвести «${song.title}» ($e)';
     }
-  }
-
-  Future<void> _setCurrentMediaItem(SongModel song) async {
-    mediaItem.add(MediaItem(
-      id: _songs.indexOf(song).toString(),
-      title: song.title,
-      artist: song.artist ?? 'Неизвестный исполнитель',
-      duration: song.duration != null
-          ? Duration(milliseconds: song.duration!)
-          : null,
-    ));
   }
 
   void _onTrackComplete() {
@@ -116,7 +105,6 @@ class AudioPlayerHandler extends BaseAudioHandler {
     }
     final next = _computeNext();
     if (next == null) {
-      // End of queue; stop unless repeat all.
       if (_repeat == RepeatMode.all) {
         _playAt(0);
       } else {
@@ -163,34 +151,46 @@ class AudioPlayerHandler extends BaseAudioHandler {
   // -------- Public playback API --------
 
   Future<void> playSong(int index) async {
-    if (_shuffle) {
-      _shuffleCursor = _shuffleOrder.indexOf(index);
+    if (index < 0 || index >= _songs.length) {
+      errorNotifier.value = 'Трек не найден';
+      return;
     }
-    await _playAt(index);
+    await playBySong(_songs[index]);
   }
 
-  @override
+  /// Plays the given song, resolving it against the handler's loaded library
+  /// by file path. This keeps the index/order independent of any UI-side
+  /// sorting/filtering.
+  Future<void> playBySong(SongModel target) async {
+    if (_songs.isEmpty) {
+      errorNotifier.value = 'Библиотека ещё не загружена';
+      return;
+    }
+    final resolved = _songs.indexWhere(
+        (s) => s.data == target.data || s.id == target.id);
+    if (resolved < 0) {
+      errorNotifier.value = 'Трек не найден в библиотеке';
+      return;
+    }
+    if (_shuffle) {
+      _shuffleCursor = _shuffleOrder.indexOf(resolved);
+    }
+    await _playAt(resolved);
+  }
+
   Future<void> play() => _player.play();
 
-  @override
   Future<void> pause() => _player.pause();
 
-  @override
-  Future<void> stop() async {
-    await _player.stop();
-    await super.stop();
-  }
+  Future<void> stop() => _player.stop();
 
-  @override
   Future<void> seek(Duration position) => _player.seek(position);
 
-  @override
   Future<void> skipToNext() async {
     final next = _computeNext();
     if (next != null) await _playAt(next);
   }
 
-  @override
   Future<void> skipToPrevious() async {
     if (_player.position.inSeconds > 3) {
       await _player.seek(Duration.zero);
@@ -198,12 +198,6 @@ class AudioPlayerHandler extends BaseAudioHandler {
     }
     final prev = _computePrev();
     if (prev != null) await _playAt(prev);
-  }
-
-  @override
-  Future<void> playFromMediaId(String mediaId, [Map<String, dynamic>? extras]) async {
-    final index = int.tryParse(mediaId);
-    if (index != null) await playSong(index);
   }
 
   void toggleRepeat() {
@@ -221,57 +215,9 @@ class AudioPlayerHandler extends BaseAudioHandler {
   }
 
   RepeatMode get repeatMode => _repeat;
+  bool get shuffleEnabled => _shuffle;
 
-  Stream<Duration> get positionStream => _player.positionStream;
-  Stream<Duration?> get durationStream => _player.durationStream;
-  Stream<bool> get playingStream => _player.playingStream;
-  bool get isPlaying => _player.playing;
-
-  void _broadcastState(PlaybackEvent event) {
-    final playing = _player.playing;
-    playbackState.add(playbackState.value.copyWith(
-      controls: [
-        MediaControl.skipToPrevious,
-        if (playing) MediaControl.pause else MediaControl.play,
-        MediaControl.stop,
-        MediaControl.skipToNext,
-      ],
-      systemActions: const {MediaAction.seek},
-      androidCompactActionIndices: const [0, 1, 3],
-      processingState: const {
-        ProcessingState.idle: AudioProcessingState.idle,
-        ProcessingState.loading: AudioProcessingState.loading,
-        ProcessingState.buffering: AudioProcessingState.buffering,
-        ProcessingState.ready: AudioProcessingState.ready,
-        ProcessingState.completed: AudioProcessingState.completed,
-      }[_player.processingState]!,
-      playing: playing,
-      updatePosition: _player.position,
-      bufferedPosition: _player.bufferedPosition,
-      speed: _player.speed,
-    ));
-  }
-
-  @override
-  Future<void> customAction(String name, [Map<String, dynamic>? extras]) async {
-    switch (name) {
-      case 'playAtIndex':
-        if (extras != null && extras.containsKey('index')) {
-          await playSong(extras['index'] as int);
-        }
-        break;
-      case 'repeat':
-        toggleRepeat();
-        break;
-      case 'shuffle':
-        toggleShuffle();
-        break;
-    }
-  }
-
-  @override
-  Future<void> onTaskRemoved() async {
-    await stop();
+  Future<void> dispose() async {
     await _player.dispose();
   }
 }

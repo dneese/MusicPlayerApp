@@ -1,7 +1,7 @@
 name: music_player_app
 description: Современный музыкальный плеер
 publish_to: 'none'
-version: 6.4.0+1
+version: 6.5.0+1
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -12,8 +12,6 @@ dependencies:
   
   # Core
   just_audio: ^0.9.36
-  just_audio_background: ^0.0.1-beta.13
-  audio_service: ^0.18.13
   rxdart: ^0.27.7
   
   # Media
