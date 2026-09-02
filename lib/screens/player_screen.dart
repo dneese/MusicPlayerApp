@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -65,6 +66,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   static const Duration _loadTimeout = Duration(seconds: 15);
+  static const Duration _permissionTimeout = Duration(seconds: 10);
 
   Future<void> _loadLibrary({bool retry = false}) async {
     if (mounted) setState(() {
@@ -76,7 +78,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     try {
       final hasPermission = await _audioQuery
           .checkAndRequest(retryRequest: retry)
-          .timeout(_loadTimeout);
+          .timeout(_permissionTimeout);
       if (!hasPermission) {
         if (mounted) setState(() {
           _isLoading = false;
@@ -95,6 +97,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
       if (mounted) setState(() {
         _songs = result;
         _isLoading = false;
+      });
+    } on TimeoutException {
+      if (mounted) setState(() {
+        _isLoading = false;
+        _loadError = 'Загрузка заняла слишком много времени. Попробуйте еще раз.';
       });
     } catch (e) {
       if (mounted) setState(() {
