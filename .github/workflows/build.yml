@@ -60,7 +60,8 @@ jobs:
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 32
-          arch: x86_64
+          arch: arm64-v8a
+          target: default
           disable-animations: true
           script: flutter test integration_test/app_test.dart
 
