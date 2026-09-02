@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:on_audio_query/on_audio_query.dart';
 import 'package:audio_service/audio_service.dart';
@@ -84,9 +86,12 @@ class _PlayerScreenState extends State<PlayerScreen> {
       }
 
       final songs = await _audioQuery.querySongs().timeout(_loadTimeout);
-      _handler?.setSongs(songs);
+
+      final result = songs.isNotEmpty ? songs : await _scanFileSystem();
+
+      _handler?.setSongs(result);
       if (mounted) setState(() {
-        _songs = songs;
+        _songs = result;
         _isLoading = false;
       });
     } catch (e) {
@@ -95,6 +100,56 @@ class _PlayerScreenState extends State<PlayerScreen> {
         _loadError = e.toString();
       });
     }
+  }
+
+  static const Set<String> _audioExtensions = {
+    'mp3', 'm4a', 'aac', 'flac', 'wav', 'ogg', 'opus', 'wma', 'amr', 'mid',
+  };
+
+  Future<List<SongModel>> _scanFileSystem() async {
+    final found = <SongModel>[];
+    final seen = <String>{};
+    final roots = [
+      '/storage/emulated/0/Music',
+      '/storage/emulated/0/Download',
+      '/storage/emulated/0/DCIM',
+      '/storage/emulated/0/Recordings',
+      '/storage/emulated/0',
+    ];
+
+    for (final root in roots) {
+      final dir = Directory(root);
+      if (!await dir.exists()) continue;
+
+      try {
+        await for (final entity in dir.list(recursive: true, followLinks: false)) {
+          if (entity is! File) continue;
+          final ext = entity.path.split('.').last.toLowerCase();
+          if (!_audioExtensions.contains(ext)) continue;
+
+          final fileName = entity.uri.pathSegments.isNotEmpty
+              ? entity.uri.pathSegments.last
+              : entity.path.split(Platform.pathSeparator).last;
+
+          if (!seen.add(entity.path)) continue;
+
+          final title = fileName.contains('.')
+              ? fileName.substring(0, fileName.lastIndexOf('.'))
+              : fileName;
+
+          found.add(SongModel({
+            '_id': found.length,
+            'title': title,
+            'artist': 'Неизвестный исполнитель',
+            'data': entity.path,
+            'duration': 0,
+            '_display_name': fileName,
+          }));
+        }
+      } catch (_) {}
+    }
+
+    return found;
   }
 
   @override
