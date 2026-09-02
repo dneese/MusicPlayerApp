@@ -295,12 +295,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   void _shareSong(SongModel song) async {
     try {
-      await SharePlus.instance.share(
-        ShareParams(
-          text: '${song.title} — ${song.artist ?? ''}',
-          subject: 'Поделиться треком',
-        ),
-      );
+      await Share.share('${song.title} — ${song.artist ?? ''}');
     } catch (_) {}
   }
 
