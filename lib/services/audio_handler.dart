@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'package:audio_service/audio_service.dart';
+import 'package:just_audio/just_audio.dart';
 import 'package:on_audio_query/on_audio_query.dart';
 import 'package:rxdart/rxdart.dart';
 
@@ -7,6 +10,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
   
   List<SongModel> _songs = [];
   int _currentIndex = 0;
+  
   final BehaviorSubject<List<SongModel>> _songsController = BehaviorSubject();
   Stream<List<SongModel>> get songsStream => _songsController.stream;
   final BehaviorSubject<int> _currentIndexController = BehaviorSubject();
@@ -161,4 +165,3 @@ class AudioPlayerHandler extends BaseAudioHandler {
     return super.dispose();
   }
 }
-

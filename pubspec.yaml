@@ -34,8 +34,9 @@ dependencies:
   sqflite: ^2.3.2
   path_provider: ^2.1.2
   
-  # Plugins
+  # Utilities
   palette_generator: ^0.3.3+3
+  device_info_plus: ^9.1.1
 
 dev_dependencies:
   flutter_test:
