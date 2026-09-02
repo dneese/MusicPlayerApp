@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:on_audio_query/on_audio_query.dart';
 import 'package:audio_service/audio_service.dart';
-import 'package:palette_generator/palette_generator.dart';
 import '../services/audio_handler.dart';
 import '../widgets/glass_panel.dart';
 import '../widgets/visualizer_widget.dart';
@@ -15,10 +14,12 @@ class PlayerScreen extends StatefulWidget {
 }
 
 class _PlayerScreenState extends State<PlayerScreen> {
+  final OnAudioQuery _audioQuery = OnAudioQuery();
   AudioPlayerHandler? _handler;
   bool _isLoading = true;
+  bool _permissionDenied = false;
+  String? _loadError;
   List<SongModel> _songs = [];
-  PaletteGenerator? _palette;
   int _currentIndex = -1;
 
   @override
@@ -38,17 +39,15 @@ class _PlayerScreenState extends State<PlayerScreen> {
     final handler = handlerNotifier.value;
     if (_handler == handler) return;
     _handler = handler;
-    _connectHandler(handler);
+    if (handler != null) {
+      _listenToHandler(handler);
+      _loadLibrary();
+    } else if (mounted) {
+      setState(() => _isLoading = false);
+    }
   }
 
-  Future<void> _connectHandler(AudioPlayerHandler? handler) async {
-    if (handler == null) {
-      if (mounted) setState(() => _isLoading = false);
-      return;
-    }
-
-    await handler.customAction('loadSongs');
-
+  void _listenToHandler(AudioPlayerHandler handler) {
     handler.songsStream.listen((songs) {
       if (mounted) setState(() {
         _songs = songs;
@@ -59,19 +58,42 @@ class _PlayerScreenState extends State<PlayerScreen> {
     handler.currentIndexStream.listen((index) {
       if (mounted) setState(() {
         _currentIndex = index;
-        if (index >= 0 && index < _songs.length) {
-          _extractAlbumColor(_songs[index]);
-        }
       });
     });
   }
 
-  Future<void> _extractAlbumColor(SongModel song) async {
-    // Simplified for now
-  }
+  Future<void> _loadLibrary({bool retry = false}) async {
+    if (mounted) setState(() {
+      _isLoading = true;
+      _permissionDenied = false;
+      _loadError = null;
+    });
 
-  Color get _dominantColor => Colors.purple; // Simplified
-  Color get _vibrantColor => Colors.pink; // Simplified
+    try {
+      final hasPermission = await _audioQuery.checkAndRequest(
+        retryRequest: retry,
+      );
+      if (!hasPermission) {
+        if (mounted) setState(() {
+          _isLoading = false;
+          _permissionDenied = true;
+        });
+        return;
+      }
+
+      final songs = await _audioQuery.querySongs();
+      _handler?.setSongs(songs);
+      if (mounted) setState(() {
+        _songs = songs;
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (mounted) setState(() {
+        _isLoading = false;
+        _loadError = e.toString();
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -88,7 +110,58 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   Widget _buildBody() {
     if (_isLoading) return const Center(child: CircularProgressIndicator());
-    if (_songs.isEmpty) return const Center(child: Text('Нет песен'));
+
+    if (_permissionDenied) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.library_music, size: 64, color: Colors.grey),
+            const SizedBox(height: 16),
+            const Text('Нет доступа к музыкальной библиотеке'),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: () => _loadLibrary(retry: true),
+              child: const Text('Разрешить доступ'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (_loadError != null) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Не удалось загрузить песни'),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: () => _loadLibrary(retry: true),
+              child: const Text('Повторить'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (_songs.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.music_off, size: 64, color: Colors.grey),
+            const SizedBox(height: 16),
+            const Text('Нет песен'),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: () => _loadLibrary(retry: true),
+              child: const Text('Обновить'),
+            ),
+          ],
+        ),
+      );
+    }
 
     return Column(
       children: [

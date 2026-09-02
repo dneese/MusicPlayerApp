@@ -11,12 +11,12 @@ class AudioPlayerHandler extends BaseAudioHandler {
   static AudioPlayerHandler? instance;
 
   final AudioPlayer _player = AudioPlayer();
-  final OnAudioQuery _audioQuery = OnAudioQuery();
 
   List<SongModel> _songs = [];
   int _currentIndex = 0;
 
-  final BehaviorSubject<List<SongModel>> _songsController = BehaviorSubject();
+  final BehaviorSubject<List<SongModel>> _songsController =
+      BehaviorSubject.seeded(const <SongModel>[]);
   Stream<List<SongModel>> get songsStream => _songsController.stream;
   final BehaviorSubject<int> _currentIndexController = BehaviorSubject();
   Stream<int> get currentIndexStream => _currentIndexController.stream;
@@ -24,24 +24,12 @@ class AudioPlayerHandler extends BaseAudioHandler {
   AudioPlayerHandler() {
     instance = this;
     handlerNotifier.value = this;
-    _init();
     _listenToPlayerChanges();
   }
 
-  Future<void> _init() async {
-    await _loadSongs();
-    if (_songs.isNotEmpty) {
-      await _setCurrentMediaItem(_songs[0]);
-    }
-  }
-
-  Future<void> _loadSongs() async {
-    try {
-      _songs = await _audioQuery.querySongs();
-      _songsController.add(_songs);
-    } catch (e) {
-      print('Ошибка загрузки: $e');
-    }
+  void setSongs(List<SongModel> songs) {
+    _songs = songs;
+    _songsController.add(songs);
   }
 
   void _listenToPlayerChanges() {
@@ -157,9 +145,6 @@ class AudioPlayerHandler extends BaseAudioHandler {
         if (extras != null && extras.containsKey('index')) {
           await _playAtIndex(extras['index'] as int);
         }
-        break;
-      case 'loadSongs':
-        await _loadSongs();
         break;
     }
   }
