@@ -1,7 +1,7 @@
 name: music_player_app
 description: Современный музыкальный плеер
 publish_to: 'none'
-version: 1.0.0+1
+version: 6.2.0+1
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
