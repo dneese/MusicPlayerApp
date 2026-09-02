@@ -12,7 +12,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: 📥 Checkout
         uses: actions/checkout@v4
@@ -22,28 +22,42 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: '17'
-      
+
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.19.0'
           cache: true
-      
-      - name: Generate Android structure
-        run: flutter create --platforms=android . --project-name music_player_app
-      
+
+      - name: Generate Android structure (clean)
+        run: |
+          rm -rf android
+          flutter create --platforms=android . --project-name music_player_app
+
+      - name: Add Android permissions & config
+        run: |
+          MANIFEST="android/app/src/main/AndroidManifest.xml"
+          sed -i '/<application/i\
+          \    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />\
+          \    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />\
+          \    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />\
+          \    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />\
+          \    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />' "$MANIFEST"
+          echo "--- Manifest after edit ---"
+          cat "$MANIFEST"
+
       - name: 📦 Install dependencies
         run: |
           flutter pub get
           flutter pub upgrade
-      
+
       - name: 🏗️ Build APK
         run: |
           flutter build apk --release --split-per-abi --verbose
-      
+
       - name: 📦 Build App Bundle
         run: flutter build appbundle --release
-      
+
       - name: 📤 Upload artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -52,7 +66,7 @@ jobs:
             build/app/outputs/flutter-apk/*.apk
             build/app/outputs/bundle/*.aab
           retention-days: 30
-      
+
       - name: 🚀 Create Release
         uses: softprops/action-gh-release@v2
         with:
