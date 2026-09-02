@@ -1,4 +1,4 @@
-name: Build and Release
+name: Build and Release APK
 
 on:
   push:
@@ -34,14 +34,9 @@ jobs:
           flutter pub get
           flutter pub upgrade
       
-      - name: Generate Android structure
-        run: flutter create --platforms=android . --project-name music_player_app
-        
-      - name: Grant execute permission for gradlew
-        run: chmod +x android/gradlew
-
       - name: 🏗️ Build APK
         run: |
+          chmod +x android/gradlew
           flutter build apk --release --split-per-abi --verbose
       
       - name: 📦 Build App Bundle
@@ -54,7 +49,6 @@ jobs:
           path: |
             build/app/outputs/flutter-apk/*.apk
             build/app/outputs/bundle/*.aab
-          retention-days: 30
       
       - name: 🚀 Create Release
         uses: softprops/action-gh-release@v2
