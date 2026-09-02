@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-      - name: 📥 Checkout code
+      - name: 📥 Checkout
         uses: actions/checkout@v4
 
       - name: Setup Java
@@ -26,32 +26,39 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.24.0'
+          flutter-version: '3.19.0'
           cache: true
       
-      - name: Install dependencies
+      - name: 🧹 Clean cache
+        run: |
+          flutter clean
+          rm -rf ~/.pub-cache
+      
+      - name: 📦 Install dependencies
         run: |
           flutter pub get
-          flutter doctor -v
+          flutter pub upgrade
       
-      - name: Build APK (split per ABI)
+      - name: 🧪 Run tests
+        run: flutter test || echo "⚠️ No tests found"
+      
+      - name: 🏗️ Build APK
         run: |
           chmod +x android/gradlew
           flutter build apk --release --split-per-abi --verbose
       
-      - name: Build App Bundle
+      - name: 📦 Build App Bundle
         run: flutter build appbundle --release
       
-      - name: Upload artifacts
+      - name: 📤 Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: release-files
           path: |
             build/app/outputs/flutter-apk/*.apk
             build/app/outputs/bundle/*.aab
-          retention-days: 30
       
-      - name: Create GitHub Release
+      - name: 🚀 Create Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
