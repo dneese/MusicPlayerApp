@@ -16,14 +16,6 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.19.0'
-      - name: Generate and Patch Android structure
-        run: |
-          flutter create . --project-name musicplayerapp
-          # Patch AndroidManifest with permissions
-          MANIFEST=android/app/src/main/AndroidManifest.xml
-          sed -i '/<\/manifest>/i \
-              <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />\
-              <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />' $MANIFEST
       - run: flutter pub get
       - name: Run smoke tests
         run: flutter test || true
