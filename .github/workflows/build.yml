@@ -40,7 +40,7 @@ jobs:
           flutter pub upgrade
       
       - name: Generate Android structure
-        run: flutter create --platforms=android .
+        run: flutter create --platforms=android . --project-name music_player_app
         
       - name: Grant execute permission for gradlew
         run: chmod +x android/gradlew
