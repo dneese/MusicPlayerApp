@@ -8,13 +8,15 @@ import 'package:on_audio_query/on_audio_query.dart';
 import 'package:palette_generator/palette_generator.dart';
 import 'package:audio_service/audio_service.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../models/playlist.dart';
 import '../repository/playlist_repository.dart';
 import '../repository/favorites_repository.dart';
+import '../repository/tags_repository.dart';
 import '../services/audio_handler.dart';
 import '../utils/theme_manager.dart';
 
-enum SortBy { title, artist, album, genre, duration, dateAdded }
+enum SortBy { title, artist, album, genre, duration, dateAdded, location }
 
 class PlayerScreen extends StatefulWidget {
   const PlayerScreen({super.key});
@@ -27,6 +29,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   final OnAudioQuery _audioQuery = OnAudioQuery();
   final PlaylistRepository _playlistRepo = PlaylistRepository();
   final FavoritesRepository _favoritesRepo = FavoritesRepository();
+  final TagsRepository _tagsRepo = TagsRepository();
 
   List<SongModel> _allSongs = [];
   List<SongModel> _songs = [];
@@ -34,6 +37,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   String? _albumTitle = 'Альбом';
   List<Playlist> _playlists = [];
   Set<String> _favorites = {};
+  Map<String, Map<String, String>> _tagOverrides = {};
   bool _isLoading = true;
   bool _permissionDenied = false;
   String? _loadError;
@@ -43,7 +47,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   AudioPlayerHandler? _handler;
 
   static const List<SortBy> _sortOptions = [
-    SortBy.title, SortBy.artist, SortBy.album, SortBy.genre, SortBy.duration, SortBy.dateAdded,
+    SortBy.title, SortBy.artist, SortBy.album, SortBy.genre, SortBy.duration, SortBy.dateAdded, SortBy.location,
   ];
 
   VoidCallback? _handlerSub;
@@ -54,11 +58,13 @@ class _PlayerScreenState extends State<PlayerScreen> {
     _loadLibrary();
     _loadPlaylists();
     _loadFavorites();
+    _loadTags();
     _handler = handlerNotifier.value;
     _handlerSub = () {
       final h = handlerNotifier.value;
       if (mounted && h != null && _handler != h) {
         setState(() => _handler = h);
+        if (_allSongs.isNotEmpty) h.setSongs(_allSongs);
       }
     };
     handlerNotifier.addListener(_handlerSub!);
@@ -94,6 +100,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
       _allSongs = result;
       _applySort();
+      // Always push songs to whichever handler is live right now, plus the
+      // cached one. This prevents the "taps but nothing plays" state where the
+      // handler attaches after the library is loaded and never gets songs.
+      final live = handlerNotifier.value ?? _handler;
+      live?.setSongs(result);
       _handler?.setSongs(result);
       if (mounted) setState(() => _isLoading = false);
     } catch (_) {
@@ -129,8 +140,18 @@ class _PlayerScreenState extends State<PlayerScreen> {
       case SortBy.dateAdded:
         sorted.sort((a, b) => (a.dateAdded ?? 0).compareTo(b.dateAdded ?? 0));
         break;
+      case SortBy.location:
+        sorted.sort((a, b) => _folderOf(a).toLowerCase().compareTo(_folderOf(b).toLowerCase()));
+        break;
     }
     setState(() => _songs = sorted);
+  }
+
+  String _folderOf(SongModel s) {
+    final path = s.data ?? '';
+    final sep = path.contains('\\') ? '\\' : '/';
+    final i = path.lastIndexOf(sep);
+    return i > 0 ? path.substring(0, i) : path;
   }
 
   Future<void> _loadPlaylists() async {
@@ -143,6 +164,20 @@ class _PlayerScreenState extends State<PlayerScreen> {
     if (mounted) setState(() => _favorites = favs);
   }
 
+  Future<void> _loadTags() async {
+    final tags = await _tagsRepo.load();
+    if (mounted) setState(() => _tagOverrides = tags);
+  }
+
+  String _displayTitle(SongModel s) =>
+      _tagOverrides[s.data]?['title'] ?? s.title;
+
+  String _displayArtist(SongModel s) =>
+      _tagOverrides[s.data]?['artist'] ?? (s.artist ?? '');
+
+  String _displayAlbum(SongModel s) =>
+      _tagOverrides[s.data]?['album'] ?? (s.album ?? '');
+
   // ---------- Playback via handler ----------
 
   Future<void> _play(SongModel song) async {
@@ -151,8 +186,13 @@ class _PlayerScreenState extends State<PlayerScreen> {
       _showSnackBase('Плеер ещё запускается, попробуйте через секунду');
       return;
     }
-    h.playSong(_songs.indexOf(song));
+    final index = _songs.indexOf(song);
+    await h.playSong(index);
     if (_navIndex != 0) setState(() => _navIndex = 0);
+    final err = h.errorNotifier.value;
+    if (err != null) {
+      _showSnackBase(err);
+    }
   }
 
   // ---------- Playlists ----------
@@ -269,6 +309,14 @@ class _PlayerScreenState extends State<PlayerScreen> {
               },
             ),
             ListTile(
+              leading: const Icon(Icons.edit),
+              title: const Text('Редактировать теги'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _editTags(song);
+              },
+            ),
+            ListTile(
               leading: const Icon(Icons.info_outline),
               title: const Text('Информация о файле'),
               onTap: () {
@@ -287,10 +335,84 @@ class _PlayerScreenState extends State<PlayerScreen> {
     final id = song.id.toString();
     final isFav = _favorites.contains(id);
     setState(() {
-      isFav ? _favorites.remove(id) : _favorites.add(id);
+      if (isFav) {
+        _favorites.remove(id);
+      } else {
+        _favorites.add(id);
+      }
     });
     await _favoritesRepo.save(_favorites);
     _showSnackBase(isFav ? 'Убрано из избранного' : 'Добавлено в избранное');
+  }
+
+  Future<void> _editTags(SongModel song) async {
+    final titleCtrl = TextEditingController(text: _displayTitle(song));
+    final artistCtrl = TextEditingController(text: _displayArtist(song));
+    final albumCtrl = TextEditingController(text: _displayAlbum(song));
+    final path = song.data;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Редактировать теги'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: titleCtrl,
+                decoration: const InputDecoration(labelText: 'Название'),
+                autofocus: true,
+              ),
+              TextField(
+                controller: artistCtrl,
+                decoration: const InputDecoration(labelText: 'Исполнитель'),
+              ),
+              TextField(
+                controller: albumCtrl,
+                decoration: const InputDecoration(labelText: 'Альбом'),
+              ),
+              const SizedBox(height: 8),
+              Text('Правки применяются к отображению. Запись во встроенные теги файла недоступна из-за ограничений хранилища Android.',
+                  style: TextStyle(
+                      fontSize: 12,
+                      color: Theme.of(ctx).colorScheme.onSurfaceVariant)),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Отмена'),
+          ),
+          FilledButton(
+            onPressed: () {
+              setState(() {
+                final entry = <String, String>{};
+                final t = titleCtrl.text.trim();
+                final a = artistCtrl.text.trim();
+                final al = albumCtrl.text.trim();
+                if (t.isNotEmpty) entry['title'] = t;
+                if (a.isNotEmpty) entry['artist'] = a;
+                if (al.isNotEmpty) entry['album'] = al;
+                if (entry.isNotEmpty) {
+                  _tagOverrides[path] = entry;
+                } else {
+                  _tagOverrides.remove(path);
+                }
+              });
+              _tagsRepo.save(_tagOverrides);
+              _applySort();
+              Navigator.pop(ctx);
+              _showSnackBase('Теги обновлены');
+            },
+            child: const Text('Сохранить'),
+          ),
+        ],
+      ),
+    );
+    titleCtrl.dispose();
+    artistCtrl.dispose();
+    albumCtrl.dispose();
   }
 
   void _shareSong(SongModel song) async {
@@ -428,6 +550,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       );
     }
     return Scaffold(
+      drawer: _buildDrawer(),
       body: Stack(
         children: [
           _buildBackground(),
@@ -442,6 +565,72 @@ class _PlayerScreenState extends State<PlayerScreen> {
           if (_songs.isNotEmpty) _buildMiniBar(),
         ],
       ),
+    );
+  }
+
+  Widget _buildDrawer() {
+    final scheme = Theme.of(context).colorScheme;
+    final items = <Widget>[
+      _drawerItem(0, Icons.library_music, 'Песни'),
+      _drawerItem(1, Icons.queue_music, 'Плейлисты'),
+      _drawerItem(2, Icons.favorite, 'Избранное'),
+      const Divider(),
+      ListTile(
+        leading: const Icon(Icons.sort_by_alpha),
+        title: const Text('Сортировка'),
+        subtitle: Text(_sortLabel(_sortOptions[_sortIndex])),
+        onTap: () {
+          Navigator.of(context).pop();
+          _showSortDialog();
+        },
+      ),
+      const Divider(),
+      ListTile(
+        leading: const Icon(Icons.info_outline),
+        title: const Text('О приложении'),
+        subtitle: const Text('Music Player Pro · v6.4.0'),
+        onTap: () {
+          Navigator.of(context).pop();
+          _openSettings();
+        },
+      ),
+    ];
+    return Drawer(
+      backgroundColor: scheme.surface,
+      child: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: Text('Music Player Pro',
+                  style: TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w800,
+                      color: scheme.primary)),
+            ),
+            const SizedBox(height: 8),
+            ...items,
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _drawerItem(int index, IconData icon, String label) {
+    final selected = _navIndex == index;
+    return ListTile(
+      selected: selected,
+      selectedTileColor: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.4),
+      leading: Icon(icon,
+          color: selected ? Theme.of(context).colorScheme.primary : null),
+      title: Text(label,
+          style: TextStyle(
+              fontWeight: selected ? FontWeight.w700 : FontWeight.w500)),
+      onTap: () {
+        setState(() => _navIndex = index);
+        Navigator.of(context).pop();
+      },
     );
   }
 
@@ -468,27 +657,33 @@ class _PlayerScreenState extends State<PlayerScreen> {
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
       child: Row(
         children: [
-          if (_navIndex == 3)
-            IconButton(
-              icon: const Icon(Icons.arrow_back),
-              tooltip: 'Назад',
-              onPressed: () => setState(() => _navIndex = 0),
-            )
-          else ...[
-            _navChip(0, Icons.library_music, 'Песни'),
-            const SizedBox(width: 8),
-            _navChip(1, Icons.queue_music, 'Плейлисты'),
-            if (_navIndex == 0 || _navIndex == 2) ...[
-              const SizedBox(width: 8),
-              _navChip(2, Icons.favorite, 'Избранное'),
-            ],
-          ],
-          const Spacer(),
+          IconButton(
+            icon: const Icon(Icons.menu),
+            tooltip: 'Меню',
+            onPressed: () => Scaffold.of(context).openDrawer(),
+          ),
+          const SizedBox(width: 4),
+          Expanded(
+            child: Text(
+              _navIndex == 3
+                  ? 'Альбом: ${_albumTitle ?? ''}'
+                  : _drawerTitle(_navIndex),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+            ),
+          ),
           if (_navIndex != 3) ...[
             IconButton(
               tooltip: 'Сортировка',
               icon: const Icon(Icons.sort_by_alpha),
-              onPressed: _showSortDialog,
+              onPressed: () {
+                if (_navIndex != 0 && _navIndex != 2) {
+                  _showSnackBase('Сортировка доступна в «Песни»');
+                  return;
+                }
+                _showSortDialog();
+              },
             ),
             IconButton(
               tooltip: 'Обновить',
@@ -505,6 +700,13 @@ class _PlayerScreenState extends State<PlayerScreen> {
       ),
     );
   }
+
+  String _drawerTitle(int index) => switch (index) {
+        0 => 'Песни',
+        1 => 'Плейлисты',
+        2 => 'Избранное',
+        _ => 'Песни',
+      };
 
   void _openSettings() {
     showModalBottomSheet(
@@ -556,14 +758,34 @@ class _PlayerScreenState extends State<PlayerScreen> {
             ListTile(
               leading: const Icon(Icons.info_outline),
               title: const Text('О приложении'),
-              subtitle: const Text('Music Player Pro · v6.3.0'),
+              subtitle: const Text('Music Player Pro · v6.4.0'),
               onTap: () => Navigator.pop(ctx),
+            ),
+            const Divider(height: 1),
+            ListTile(
+              leading: const Icon(Icons.link),
+              title: const Text('Исходный код (GitHub)'),
+              subtitle: const Text('github.com/dneese/MusicPlayerApp'),
+              onTap: () async {
+                Navigator.pop(ctx);
+                await _openRepo();
+              },
             ),
             const SizedBox(height: 8),
           ],
         ),
       ),
     );
+  }
+
+  Future<void> _openRepo() async {
+    const url = 'https://github.com/dneese/MusicPlayerApp';
+    try {
+      await launchUrl(Uri.parse(url),
+          mode: LaunchMode.externalApplication);
+    } catch (_) {
+      _showSnackBase('Не удалось открыть ссылку');
+    }
   }
 
   String _themeLabel(ThemeMode m) => switch (m) {
@@ -604,18 +826,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
         SortBy.genre => 'По жанру',
         SortBy.duration => 'По длительности',
         SortBy.dateAdded => 'По дате добавления',
+        SortBy.location => 'По папке / файлу',
       };
-
-  Widget _navChip(int index, IconData icon, String label) {
-    final selected = _navIndex == index;
-    return ChoiceChip(
-      selected: selected,
-      showCheckmark: false,
-      avatar: Icon(icon, size: 18),
-      label: Text(label),
-      onSelected: (_) => setState(() => _navIndex = index),
-    );
-  }
 
   Widget _buildBody() {
     if (_permissionDenied) {
@@ -702,6 +914,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
         final song = songs[index];
         return _SongTile(
           song: song,
+          displayTitle: _displayTitle(song),
+          displayArtist: _displayArtist(song),
+          displayAlbum: _displayAlbum(song),
           artwork: _artwork(song.id),
           onTap: () => _play(song),
           onMenu: () => _showTrackMenu(song),
@@ -937,12 +1152,18 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
 class _SongTile extends StatelessWidget {
   final SongModel song;
+  final String displayTitle;
+  final String displayArtist;
+  final String displayAlbum;
   final Widget artwork;
   final VoidCallback onTap;
   final VoidCallback onMenu;
 
   const _SongTile({
     required this.song,
+    required this.displayTitle,
+    required this.displayArtist,
+    required this.displayAlbum,
     required this.artwork,
     required this.onTap,
     required this.onMenu,
@@ -962,13 +1183,13 @@ class _SongTile extends StatelessWidget {
           children: [artwork],
         ),
         title: Text(
-          song.title,
+          displayTitle,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(color: scheme.onSurface, fontWeight: FontWeight.w600),
         ),
         subtitle: Text(
-          [song.artist, song.album].where((s) => s != null && s.isNotEmpty).join(' · '),
+          [displayArtist, displayAlbum].where((s) => s.isNotEmpty).join(' · '),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),

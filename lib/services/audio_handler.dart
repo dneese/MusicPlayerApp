@@ -22,6 +22,10 @@ class AudioPlayerHandler extends BaseAudioHandler {
   final BehaviorSubject<List<SongModel>> _songsController = BehaviorSubject.seeded(const <SongModel>[]);
   final BehaviorSubject<int> _currentIndexController = BehaviorSubject.seeded(-1);
 
+  /// Surfaces playback errors to the UI for a helpful message instead of a
+  /// silent dead tap.
+  final ValueNotifier<String?> errorNotifier = ValueNotifier<String?>(null);
+
   Stream<RepeatMode> get repeatStream => _repeatController.stream;
   Stream<bool> get shuffleStream => _shuffleController.stream;
   Stream<List<SongModel>> get songsStream => _songsController.stream;
@@ -68,8 +72,14 @@ class AudioPlayerHandler extends BaseAudioHandler {
   }
 
   Future<void> _playAt(int index) async {
-    if (_songs.isEmpty) return;
-    if (index < 0 || index >= _songs.length) return;
+    if (_songs.isEmpty) {
+      errorNotifier.value = 'Библиотека ещё не загружена';
+      return;
+    }
+    if (index < 0 || index >= _songs.length) {
+      errorNotifier.value = 'Трек не найден';
+      return;
+    }
 
     final prevIndex = _currentIndex;
     _currentIndex = index;
@@ -80,8 +90,10 @@ class AudioPlayerHandler extends BaseAudioHandler {
       await _player.setFilePath(song.data);
       await _setCurrentMediaItem(song);
       _player.play();
+      errorNotifier.value = null;
     } catch (e) {
       _currentIndex = prevIndex;
+      errorNotifier.value = 'Не удалось воспроизвести «${song.title}» ($e)';
     }
   }
 
