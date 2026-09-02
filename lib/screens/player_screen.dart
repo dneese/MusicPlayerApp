@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:on_audio_query/on_audio_query.dart';
 import 'package:palette_generator/palette_generator.dart';
+import 'package:audio_service/audio_service.dart';
 import '../models/playlist.dart';
 import '../repository/playlist_repository.dart';
 import '../services/audio_handler.dart';
@@ -37,7 +38,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
     SortBy.title, SortBy.artist, SortBy.album, SortBy.genre, SortBy.duration, SortBy.dateAdded,
   ];
 
-  StreamSubscription<AudioPlayerHandler?>? _handlerSub;
+  VoidCallback? _handlerSub;
 
   @override
   void initState() {
@@ -45,16 +46,18 @@ class _PlayerScreenState extends State<PlayerScreen> {
     _loadLibrary();
     _loadPlaylists();
     _handler = handlerNotifier.value;
-    _handlerSub = handlerNotifier.listen((h) {
+    _handlerSub = () {
+      final h = handlerNotifier.value;
       if (mounted && h != null && _handler != h) {
         setState(() => _handler = h);
       }
-    });
+    };
+    handlerNotifier.addListener(_handlerSub!);
   }
 
   @override
   void dispose() {
-    _handlerSub?.cancel();
+    if (_handlerSub != null) handlerNotifier.removeListener(_handlerSub!);
     super.dispose();
   }
 
@@ -991,6 +994,7 @@ class _SeekBarState extends State<_SeekBar> {
   double _value = 0;
   Duration _duration = Duration.zero;
   Duration _position = Duration.zero;
+  bool _dragging = false;
 
   @override
   void initState() {
@@ -999,7 +1003,9 @@ class _SeekBarState extends State<_SeekBar> {
       if (mounted) {
         setState(() {
           _position = pos;
-          _value = _duration.inMilliseconds > 0 ? pos.inMilliseconds / _duration.inMilliseconds : 0;
+          if (!_dragging) {
+            _value = _duration.inMilliseconds > 0 ? pos.inMilliseconds / _duration.inMilliseconds : 0;
+          }
         });
       }
     });
@@ -1020,7 +1026,17 @@ class _SeekBarState extends State<_SeekBar> {
       children: [
         Slider(
           value: _value.clamp(0.0, 1.0),
-          onChangeEnd: (v) => widget.handler.seek(Duration(milliseconds: (v * _duration.inMilliseconds).round())),
+          onChanged: (v) => setState(() {
+            _dragging = true;
+            _value = v;
+          }),
+          onChangeEnd: (v) {
+            widget.handler.seek(Duration(milliseconds: (v * _duration.inMilliseconds).round()));
+            setState(() {
+              _dragging = false;
+              _value = v;
+            });
+          },
           activeColor: Colors.white,
         ),
         Padding(
