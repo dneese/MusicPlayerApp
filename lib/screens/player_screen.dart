@@ -1,9 +1,11 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:on_audio_query/on_audio_query.dart';
+import 'package:palette_generator/palette_generator.dart';
 import '../models/playlist.dart';
 import '../repository/playlist_repository.dart';
 
@@ -27,6 +29,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   int _currentIndex = -1;
   bool _expanded = false;
   int _navIndex = 0; // 0 = Песни, 1 = Плейлисты
+  Color _accent = Colors.deepPurple;
 
   StreamSubscription<PlayerState>? _playerStateSub;
 
@@ -113,7 +116,21 @@ class _PlayerScreenState extends State<PlayerScreen> {
       return;
     }
     if (mounted) setState(() => _currentIndex = index);
+    _loadAccent(song.id);
     _player.play();
+  }
+
+  Future<void> _loadAccent(int id) async {
+    try {
+      final bytes = await _audioQuery.queryArtwork(id, ArtworkType.AUDIO,
+          format: ArtworkFormat.JPEG, size: 200);
+      if (bytes == null || bytes.isEmpty) return;
+      final palette = await PaletteGenerator.fromBytes(bytes, maximumColorCount: 6);
+      final color = palette.dominantColor?.color;
+      if (color != null && mounted) {
+        setState(() => _accent = color);
+      }
+    } catch (_) {}
   }
 
   void _next({bool auto = false}) {
@@ -474,16 +491,16 @@ class _PlayerScreenState extends State<PlayerScreen> {
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 colors: [
-                  Theme.of(context).colorScheme.primary.withOpacity(0.9),
-                  Theme.of(context).colorScheme.primaryContainer,
+                  _accent.withOpacity(0.95),
+                  Color.lerp(_accent, Theme.of(context).colorScheme.surface, 0.35)!,
                 ],
               ),
               borderRadius: BorderRadius.circular(20),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.25),
-                  blurRadius: 16,
-                  offset: const Offset(0, 6),
+                  color: _accent.withOpacity(0.4),
+                  blurRadius: 18,
+                  offset: const Offset(0, 8),
                 ),
               ],
             ),
