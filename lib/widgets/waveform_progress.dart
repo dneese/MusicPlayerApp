@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:liquid_progress_indicator/liquid_progress_indicator.dart';
-import 'package:flutter_animate/flutter_animate.dart';
+import 'dart:math';
 
 class WaveformProgress extends StatelessWidget {
   final double progress;
@@ -16,17 +15,36 @@ class WaveformProgress extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final clamped = progress.clamp(0.0, 1.0);
+    final bars = 40;
+    final random = Random(42);
+
     return Container(
       height: height,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(15),
-        child: LiquidLinearProgressIndicator(
-          value: progress.clamp(0.0, 1.0),
-          valueColor: AlwaysStoppedAnimation(color),
-          backgroundColor: Colors.grey.withOpacity(0.2),
-          center: Text('${(progress * 100).toInt()}%', style: const TextStyle(color: Colors.white, fontSize: 10)),
+        child: Row(
+          children: List.generate(bars, (i) {
+            final isFilled = i / bars <= clamped;
+            final barHeight = 0.4 + (random.nextDouble() * 0.6);
+            return Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 1),
+                child: Align(
+                  alignment: Alignment.center,
+                  child: Container(
+                    height: height * barHeight,
+                    decoration: BoxDecoration(
+                      color: isFilled ? color : color.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+              ),
+            );
+          }),
         ),
       ),
-    ).animate().fadeIn(duration: 300.ms);
+    );
   }
 }

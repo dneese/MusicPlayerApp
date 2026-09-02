@@ -1,22 +1,24 @@
-import 'dart:async';
 import 'package:audio_service/audio_service.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:on_audio_query/on_audio_query.dart';
 import 'package:rxdart/rxdart.dart';
 
 class AudioPlayerHandler extends BaseAudioHandler {
+  static AudioPlayerHandler? instance;
+
   final AudioPlayer _player = AudioPlayer();
   final OnAudioQuery _audioQuery = OnAudioQuery();
-  
+
   List<SongModel> _songs = [];
   int _currentIndex = 0;
-  
+
   final BehaviorSubject<List<SongModel>> _songsController = BehaviorSubject();
   Stream<List<SongModel>> get songsStream => _songsController.stream;
   final BehaviorSubject<int> _currentIndexController = BehaviorSubject();
   Stream<int> get currentIndexStream => _currentIndexController.stream;
 
   AudioPlayerHandler() {
+    instance = this;
     _init();
     _listenToPlayerChanges();
   }
@@ -38,22 +40,7 @@ class AudioPlayerHandler extends BaseAudioHandler {
   }
 
   void _listenToPlayerChanges() {
-    _player.playerStateStream.listen((state) {
-      playbackState.add(playbackState.value.copyWith(
-        playing: state.playing,
-        processingState: _getProcessingState(state.processingState),
-      ));
-    });
-
-    _player.positionStream.listen((position) {
-      playbackState.add(playbackState.value.copyWith(position: position));
-    });
-
-    _player.durationStream.listen((duration) {
-      if (duration != null) {
-        playbackState.add(playbackState.value.copyWith(duration: duration));
-      }
-    });
+    _player.playbackEventStream.listen(_broadcastState);
 
     _player.playerStateStream.listen((state) {
       if (state.processingState == ProcessingState.completed) {
@@ -62,17 +49,48 @@ class AudioPlayerHandler extends BaseAudioHandler {
     });
   }
 
+  void _broadcastState(PlaybackEvent event) {
+    final playing = _player.playing;
+    playbackState.add(playbackState.value.copyWith(
+      controls: [
+        MediaControl.skipToPrevious,
+        if (playing) MediaControl.pause else MediaControl.play,
+        MediaControl.stop,
+        MediaControl.skipToNext,
+      ],
+      systemActions: const {MediaAction.seek},
+      androidCompactActionIndices: const [0, 1, 3],
+      processingState: const {
+        ProcessingState.idle: AudioProcessingState.idle,
+        ProcessingState.loading: AudioProcessingState.loading,
+        ProcessingState.buffering: AudioProcessingState.buffering,
+        ProcessingState.ready: AudioProcessingState.ready,
+        ProcessingState.completed: AudioProcessingState.completed,
+      }[_player.processingState]!,
+      playing: playing,
+      updatePosition: _player.position,
+      bufferedPosition: _player.bufferedPosition,
+      speed: _player.speed,
+    ));
+  }
+
   @override
   Future<void> play() => _player.play();
+
   @override
   Future<void> pause() => _player.pause();
+
   @override
-  Future<void> stop() => _player.stop();
+  Future<void> stop() async {
+    await _player.stop();
+    await super.stop();
+  }
+
   @override
   Future<void> seek(Duration position) => _player.seek(position);
 
   @override
-  Future<void> playFromMediaId(String mediaId) async {
+  Future<void> playFromMediaId(String mediaId, [Map<String, dynamic>? extras]) async {
     final index = int.tryParse(mediaId);
     if (index != null && index < _songs.length) {
       await _playAtIndex(index);
@@ -81,10 +99,10 @@ class AudioPlayerHandler extends BaseAudioHandler {
 
   Future<void> _playAtIndex(int index) async {
     if (index < 0 || index >= _songs.length) return;
-    
+
     _currentIndex = index;
     _currentIndexController.add(index);
-    
+
     final song = _songs[index];
     await _player.setFilePath(song.data);
     await _setCurrentMediaItem(song);
@@ -118,23 +136,13 @@ class AudioPlayerHandler extends BaseAudioHandler {
   }
 
   @override
-  Future<void> fastForward() => _next();
-  @override
-  Future<void> rewind() => _previous();
+  Future<void> skipToNext() async {
+    _next();
+  }
 
-  ProcessingState _getProcessingState(ProcessingState state) {
-    switch (state) {
-      case ProcessingState.idle:
-        return ProcessingState.idle;
-      case ProcessingState.loading:
-        return ProcessingState.loading;
-      case ProcessingState.buffering:
-        return ProcessingState.buffering;
-      case ProcessingState.ready:
-        return ProcessingState.ready;
-      case ProcessingState.completed:
-        return ProcessingState.completed;
-    }
+  @override
+  Future<void> skipToPrevious() async {
+    _previous();
   }
 
   @override
@@ -155,13 +163,5 @@ class AudioPlayerHandler extends BaseAudioHandler {
   Future<void> onTaskRemoved() async {
     await stop();
     await _player.dispose();
-  }
-
-  @override
-  Future<void> dispose() {
-    _songsController.close();
-    _currentIndexController.close();
-    _player.dispose();
-    return super.dispose();
   }
 }

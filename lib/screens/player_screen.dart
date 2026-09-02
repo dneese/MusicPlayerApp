@@ -1,11 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:on_audio_query/on_audio_query.dart';
 import 'package:audio_service/audio_service.dart';
-import 'package:flutter_animate/flutter_animate.dart';
 import 'package:palette_generator/palette_generator.dart';
 import '../services/audio_handler.dart';
 import '../widgets/glass_panel.dart';
-import '../widgets/waveform_progress.dart';
 import '../widgets/visualizer_widget.dart';
 import '../utils/theme_manager.dart';
 
@@ -30,7 +28,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   Future<void> _initAudioService() async {
-    _handler = await AudioService.getHandler() as AudioPlayerHandler?;
+    _handler = AudioPlayerHandler.instance;
 
     if (_handler != null) {
       await _handler!.customAction('loadSongs');
@@ -119,10 +117,10 @@ class _PlayerScreenState extends State<PlayerScreen> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        IconButton(icon: const Icon(Icons.skip_previous), onPressed: () => _handler?.rewind()),
+        IconButton(icon: const Icon(Icons.skip_previous), onPressed: () => _handler?.skipToPrevious()),
         IconButton(icon: Icon(isPlaying ? Icons.pause : Icons.play_arrow), 
                    onPressed: () => isPlaying ? _handler?.pause() : _handler?.play()),
-        IconButton(icon: const Icon(Icons.skip_next), onPressed: () => _handler?.fastForward()),
+        IconButton(icon: const Icon(Icons.skip_next), onPressed: () => _handler?.skipToNext()),
       ],
     );
   }
