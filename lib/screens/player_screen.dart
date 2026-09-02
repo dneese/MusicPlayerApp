@@ -8,7 +8,6 @@ import '../widgets/glass_panel.dart';
 import '../widgets/waveform_progress.dart';
 import '../widgets/visualizer_widget.dart';
 import '../utils/theme_manager.dart';
-import 'equalizer_screen.dart';
 
 class PlayerScreen extends StatefulWidget {
   const PlayerScreen({super.key});
@@ -110,7 +109,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
       title: const Text('Музыка', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 24)),
       actions: [
         IconButton(icon: const Icon(Icons.palette), onPressed: () => ThemeManager.toggleTheme()),
-        IconButton(icon: const Icon(Icons.equalizer), onPressed: () => _showEqualizerDialog()),
       ],
     );
   }
@@ -203,21 +201,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
     );
   }
 
-  void _showEqualizerDialog() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => Container(
-        height: MediaQuery.of(context).size.height * 0.7,
-        decoration: BoxDecoration(color: Theme.of(context).scaffoldBackgroundColor, borderRadius: const BorderRadius.vertical(top: Radius.circular(30))),
-        child: const EqualizerScreen(),
-      ),
-    );
-  }
-
   @override
   void dispose() {
     super.dispose();
   }
 }
+

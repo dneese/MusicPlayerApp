@@ -1,14 +1,9 @@
-import 'dart:async';
-import 'package:audio_service/audio_service.dart';
-import 'package:just_audio/just_audio.dart';
 import 'package:on_audio_query/on_audio_query.dart';
 import 'package:rxdart/rxdart.dart';
-import 'package:equalizer_plugin/equalizer_plugin.dart';
 
 class AudioPlayerHandler extends BaseAudioHandler {
   final AudioPlayer _player = AudioPlayer();
   final OnAudioQuery _audioQuery = OnAudioQuery();
-  final Equalizer _equalizer = Equalizer();
   
   List<SongModel> _songs = [];
   int _currentIndex = 0;
@@ -23,7 +18,6 @@ class AudioPlayerHandler extends BaseAudioHandler {
   }
 
   Future<void> _init() async {
-    await _equalizer.init();
     await _loadSongs();
     if (_songs.isNotEmpty) {
       await _setCurrentMediaItem(_songs[0]);
@@ -157,15 +151,14 @@ class AudioPlayerHandler extends BaseAudioHandler {
   Future<void> onTaskRemoved() async {
     await stop();
     await _player.dispose();
-    await _equalizer.dispose();
   }
 
   @override
-  void dispose() {
+  Future<void> dispose() {
     _songsController.close();
     _currentIndexController.close();
     _player.dispose();
-    _equalizer.dispose();
-    super.dispose();
+    return super.dispose();
   }
 }
+
