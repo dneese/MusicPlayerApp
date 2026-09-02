@@ -24,12 +24,4 @@ class Playlist {
             .map((e) => e as String)
             .toList(),
       );
-
-  String encodeList(List<Playlist> playlists) =>
-      jsonEncode(playlists.map((p) => p.toJson()).toList());
-
-  static List<Playlist> decodeList(String raw) {
-    final list = jsonDecode(raw) as List<dynamic>;
-    return list.map((e) => Playlist.fromJson(e as Map<String, dynamic>)).toList();
-  }
 }

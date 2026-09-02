@@ -358,7 +358,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
       id: id,
       type: ArtworkType.AUDIO,
       errorBuilder: (_, __, ___) => Container(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        color: Theme.of(context).colorScheme.surfaceVariant,
         child: const Icon(Icons.music_note, color: Colors.grey),
       ),
       artworkHeight: 48,

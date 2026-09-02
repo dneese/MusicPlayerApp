@@ -30,6 +30,17 @@ jobs:
           flutter-version: '3.19.0'
           cache: true
 
+      - name: 💾 Cache Gradle (speeds up Android builds)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            ~/.pub-cache
+          key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle*', '**/pubspec.lock') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
+
       - name: Generate Android structure (clean)
         run: |
           rm -rf android
