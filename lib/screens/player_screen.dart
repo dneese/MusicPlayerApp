@@ -87,7 +87,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
       final songs = await _audioQuery.querySongs().timeout(_loadTimeout);
 
-      final result = songs.isNotEmpty ? songs : await _scanFileSystem();
+      final result = songs.isNotEmpty
+          ? songs
+          : await _scanFileSystem().timeout(const Duration(seconds: 45));
 
       _handler?.setSongs(result);
       if (mounted) setState(() {
@@ -114,42 +116,54 @@ class _PlayerScreenState extends State<PlayerScreen> {
       '/storage/emulated/0/Download',
       '/storage/emulated/0/DCIM',
       '/storage/emulated/0/Recordings',
-      '/storage/emulated/0',
+      '/storage',
     ];
 
     for (final root in roots) {
       final dir = Directory(root);
       if (!await dir.exists()) continue;
-
-      try {
-        await for (final entity in dir.list(recursive: true, followLinks: false)) {
-          if (entity is! File) continue;
-          final ext = entity.path.split('.').last.toLowerCase();
-          if (!_audioExtensions.contains(ext)) continue;
-
-          final fileName = entity.uri.pathSegments.isNotEmpty
-              ? entity.uri.pathSegments.last
-              : entity.path.split(Platform.pathSeparator).last;
-
-          if (!seen.add(entity.path)) continue;
-
-          final title = fileName.contains('.')
-              ? fileName.substring(0, fileName.lastIndexOf('.'))
-              : fileName;
-
-          found.add(SongModel({
-            '_id': found.length,
-            'title': title,
-            'artist': 'Неизвестный исполнитель',
-            'data': entity.path,
-            'duration': 0,
-            '_display_name': fileName,
-          }));
-        }
-      } catch (_) {}
+      _scanDir(dir, found, seen, 0);
     }
 
     return found;
+  }
+
+  void _scanDir(Directory dir, List<SongModel> found, Set<String> seen, int depth) {
+    if (depth > 6) return;
+
+    List<FileSystemEntity> children;
+    try {
+      children = dir.listSync(followLinks: false);
+    } catch (_) {
+      return;
+    }
+
+    for (final child in children) {
+      if (child is Directory) {
+        _scanDir(child, found, seen, depth + 1);
+      } else if (child is File) {
+        final ext = child.path.split('.').last.toLowerCase();
+        if (!_audioExtensions.contains(ext)) continue;
+        if (!seen.add(child.path)) continue;
+
+        final fileName = child.uri.pathSegments.isNotEmpty
+            ? child.uri.pathSegments.last
+            : child.path.split(Platform.pathSeparator).last;
+
+        final title = fileName.contains('.')
+            ? fileName.substring(0, fileName.lastIndexOf('.'))
+            : fileName;
+
+        found.add(SongModel({
+          '_id': found.length,
+          'title': title,
+          'artist': 'Неизвестный исполнитель',
+          'data': child.path,
+          'duration': 0,
+          '_display_name': fileName,
+        }));
+      }
+    }
   }
 
   @override

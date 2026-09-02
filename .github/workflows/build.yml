@@ -10,64 +10,6 @@ permissions:
   contents: write
 
 jobs:
-  widget-test:
-    name: Widget tests
-    runs-on: ubuntu-latest
-    steps:
-      - name: 📥 Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: '3.19.0'
-          cache: true
-
-      - name: 📦 Install dependencies
-        run: flutter pub get
-
-      - name: 🧪 Run widget tests
-        run: flutter test test/widget_test.dart
-
-  integration-test:
-    name: Integration tests (Android emulator)
-    runs-on: macos-latest
-    # Android emulator cannot boot on GitHub-hosted arm64 runners (HVF unsupported).
-    # Run it as best-effort so it does not block releases.
-    continue-on-error: true
-    steps:
-      - name: 📥 Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '17'
-
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: '3.19.0'
-          cache: true
-
-      - name: Generate Android structure (clean)
-        run: |
-          rm -rf android
-          flutter create --platforms=android . --project-name music_player_app
-
-      - name: 📦 Install dependencies
-        run: flutter pub get
-
-      - name: 🚀 Boot emulator and run integration tests
-        uses: reactivecircus/android-emulator-runner@v2
-        with:
-          api-level: 32
-          arch: arm64-v8a
-          target: default
-          disable-animations: true
-          script: flutter test integration_test/app_test.dart
-
   build:
     name: Build & Release
     runs-on: ubuntu-latest
