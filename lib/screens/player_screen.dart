@@ -62,6 +62,8 @@ class _PlayerScreenState extends State<PlayerScreen> {
     });
   }
 
+  static const Duration _loadTimeout = Duration(seconds: 15);
+
   Future<void> _loadLibrary({bool retry = false}) async {
     if (mounted) setState(() {
       _isLoading = true;
@@ -70,9 +72,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
     });
 
     try {
-      final hasPermission = await _audioQuery.checkAndRequest(
-        retryRequest: retry,
-      );
+      final hasPermission = await _audioQuery
+          .checkAndRequest(retryRequest: retry)
+          .timeout(_loadTimeout);
       if (!hasPermission) {
         if (mounted) setState(() {
           _isLoading = false;
@@ -81,7 +83,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
         return;
       }
 
-      final songs = await _audioQuery.querySongs();
+      final songs = await _audioQuery.querySongs().timeout(_loadTimeout);
       _handler?.setSongs(songs);
       if (mounted) setState(() {
         _songs = songs;
