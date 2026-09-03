@@ -1,6 +1,6 @@
 # Music Player Pro
 
-Современный музыкальный плеер для Android (Flutter), вдохновлённый Spotify / YouTube Music / AIMP / PowerAMP.
+Современный музыкальный плеер для Android (Flutter), полностью написан и собран AI.
 
 ## Особенности
 
